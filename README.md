@@ -4,6 +4,28 @@ Server-assisted creature spell & aura sniffer for TrinityCore-based WoW emulator
 
 CreatureCodex captures every spell cast, channel, and aura application from creatures — including instant/hidden casts the client API can't see — and stores them in a browsable database you can export as SQL for `creature_template_spell` or SmartAI.
 
+## Why This Exists
+
+TrinityCore emulators need complete creature spell data in `creature_template_spell` for NPCs to fight properly. Without it, mobs stand there auto-attacking. This data doesn't ship in DB2 files — it has to be observed from a live retail server, either through packet captures or addon-based scraping.
+
+**The 12.x Midnight client made this dramatically harder:**
+
+- **`COMBAT_LOG_EVENT_UNFILTERED` is effectively dead.** The combat log used to be the gold standard for capturing creature spell casts. In 12.x, cross-addon communication and GUID tracking are severely locked down. You can no longer passively listen to CLEU and get reliable creature spell data.
+
+- **Taint and secret values.** The 12.x engine actively injects opaque C++ `userdata` taints into core UI variables — spell IDs, GUIDs, aura data. The `issecretvalue()` function gates access to these values, and standard Lua `tonumber()`/`tostring()` will silently fail on tainted data. Any addon that touches spell or unit data must wrap every access in `pcall` with explicit secret-value checks, or it will break without warning.
+
+- **Instant and hidden casts are invisible.** `UnitCastingInfo` and `UnitChannelInfo` only see spells with visible cast bars. Instant casts, triggered spells, and many boss mechanics never appear in these APIs. On retail, this means a significant portion of a creature's spell list is simply unobservable from the client side.
+
+- **Traditional sniffing is expensive.** The classic pipeline — run Ymir packet sniffer, capture traffic, parse with WowPacketParser, manually extract spell data — works but requires dedicated tooling, careful cache clearing, specific movement patterns (walking captures dense data, flying captures sparse), and significant post-processing. It's not something you can hand to a guild of players and say "go help."
+
+**CreatureCodex solves this with a dual-layer approach:**
+
+The client-side visual scraper does the best it can with the restricted APIs — polling cast bars at 10 Hz, scanning nameplate auras at 5 Hz, wrapping every access in taint-safe helpers. This works on any server with zero patches.
+
+The server-side C++ hooks bypass all client restrictions entirely. Four `UnitScript` hooks fire on every `Spell::cast()`, `Spell::SendSpellGo()`, `Spell::SendChannelUpdate()`, and `Unit::_ApplyAura()` — catching 100% of casts including instant, hidden, and triggered spells. The data is broadcast as lightweight addon messages only to nearby players running the addon, so there's zero overhead for players who don't have it.
+
+When both layers run together, the addon deduplicates automatically and you get complete, gap-free creature spell databases that can be exported directly as SQL.
+
 ## How It Works
 
 CreatureCodex has two layers:

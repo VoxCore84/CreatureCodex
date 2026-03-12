@@ -4,6 +4,28 @@ Server-gestützter Kreatur-Zauber- und Aura-Sniffer für TrinityCore-basierte Wo
 
 CreatureCodex erfasst jeden Zauberspruch, jede Kanalisierung und jede Aura-Anwendung von Kreaturen — einschließlich sofortiger/versteckter Zauber, die die Client-API nicht sehen kann — und speichert sie in einer durchsuchbaren Datenbank, die als SQL für `creature_template_spell` oder SmartAI exportiert werden kann.
 
+## Warum dieses Tool existiert
+
+TrinityCore-Emulatoren brauchen vollständige Kreatur-Zauberdaten in `creature_template_spell`, damit NPCs richtig kämpfen. Ohne diese Daten stehen Mobs einfach da und auto-attacken. Diese Daten werden nicht in DB2-Dateien mitgeliefert — sie müssen von einem Live-Retail-Server beobachtet werden, entweder durch Paketmitschnitte oder Addon-basiertes Scraping.
+
+**Der 12.x Midnight-Client hat das dramatisch erschwert:**
+
+- **`COMBAT_LOG_EVENT_UNFILTERED` ist praktisch tot.** Das Kampflog war früher der Goldstandard zum Erfassen von Kreatur-Zaubern. In 12.x sind Cross-Addon-Kommunikation und GUID-Tracking stark eingeschränkt. Passives Lauschen auf CLEU liefert keine zuverlässigen Kreatur-Zauberdaten mehr.
+
+- **Taint und geheime Werte.** Die 12.x-Engine injiziert aktiv undurchsichtige C++ `userdata`-Taints in zentrale UI-Variablen — Zauber-IDs, GUIDs, Aura-Daten. Die `issecretvalue()`-Funktion kontrolliert den Zugriff auf diese Werte, und Standard-Lua `tonumber()`/`tostring()` versagen stillschweigend bei getainteten Daten. Jedes Addon, das Zauber- oder Unit-Daten anfasst, muss jeden Zugriff in `pcall` mit expliziter Secret-Value-Prüfung wrappen — sonst bricht es ohne Warnung.
+
+- **Sofortzauber und versteckte Casts sind unsichtbar.** `UnitCastingInfo` und `UnitChannelInfo` sehen nur Zauber mit sichtbarer Zauberleiste. Sofortzauber, getriggerte Zauber und viele Boss-Mechaniken erscheinen nie in diesen APIs. Auf Retail bedeutet das, dass ein erheblicher Teil der Zauberliste einer Kreatur client-seitig schlicht nicht beobachtbar ist.
+
+- **Traditionelles Sniffen ist aufwendig.** Die klassische Pipeline — Ymir-Paket-Sniffer starten, Traffic mitschneiden, mit WowPacketParser parsen, Zauberdaten manuell extrahieren — funktioniert, erfordert aber spezialisiertes Tooling, sorgfältiges Cache-Leeren, bestimmte Bewegungsmuster (Laufen = dichte Daten, Fliegen = dünn) und erhebliche Nachbearbeitung. Nichts, was man einer Gilde geben und sagen kann „helft mal mit".
+
+**CreatureCodex löst das mit einem Zwei-Schichten-Ansatz:**
+
+Der client-seitige visuelle Scanner holt das Beste aus den eingeschränkten APIs heraus — pollt Zauberleisten mit 10 Hz, scannt Nameplate-Auren mit 5 Hz, wrappt jeden Zugriff in Taint-sichere Helfer. Das funktioniert auf jedem Server ohne Patches.
+
+Die server-seitigen C++-Hooks umgehen alle Client-Einschränkungen komplett. Vier `UnitScript`-Hooks feuern bei jedem `Spell::cast()`, `Spell::SendSpellGo()`, `Spell::SendChannelUpdate()` und `Unit::_ApplyAura()` — und erfassen 100% aller Casts, einschließlich sofortiger, versteckter und getriggerter Zauber. Die Daten werden als leichtgewichtige Addon-Nachrichten nur an nahestehende Spieler mit installiertem Addon gesendet — null Overhead für alle anderen.
+
+Wenn beide Schichten zusammenarbeiten, dedupliziert das Addon automatisch und Sie erhalten vollständige, lückenlose Kreatur-Zauberdatenbanken, die direkt als SQL exportiert werden können.
+
 ## Funktionsweise
 
 CreatureCodex hat zwei Schichten:
