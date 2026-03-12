@@ -7,6 +7,10 @@ Your NPCs don't fight. They stand there and auto-attack because `creature_templa
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
+![Browser — creature list, spell details, tooltip with cooldown/HP/status](screenshots/browser.jpg)
+
+![Debug mode — live server sniffer output with spell entries, schools, HP%, cooldowns](screenshots/debug.jpg)
+
 ## What It Does
 
 1. **Install the addon** on any TrinityCore server — repacks included, no server patches needed
