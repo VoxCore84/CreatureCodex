@@ -3,33 +3,45 @@
 [![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Server-assisted creature spell & aura sniffer for TrinityCore-based WoW emulators.
+Your NPCs don't fight. They stand there and auto-attack because `creature_template_spell` is empty and there's no SmartAI telling them what to cast. CreatureCodex fixes that.
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
-CreatureCodex captures every spell cast, channel, and aura application from creatures — including instant/hidden casts the client API can't see — and stores them in a browsable database you can export as SQL for `creature_template_spell` or SmartAI.
+## What It Does
 
-## Why This Exists
+1. **Install the addon** on any TrinityCore server — repacks included, no server patches needed
+2. **Walk around and let creatures fight** — the addon captures every spell cast, channel, and aura in real time
+3. **Open the export panel** and hit the **SmartAI** tab — ready-to-apply SQL with estimated cooldowns, HP phase triggers, and target types
+4. **Apply the SQL** — your NPCs now cast spells with proper timing and behavior
 
-TrinityCore emulators need complete creature spell data in `creature_template_spell` for NPCs to fight properly. Without it, mobs stand there auto-attacking. This data doesn't ship in DB2 files — it has to be observed from a live retail server, either through packet captures or addon-based scraping.
+CreatureCodex turns observation into working SmartAI. You watch mobs fight, it writes the `smart_scripts` and `creature_template_spell` inserts for you.
 
-**The 12.x Midnight client made this dramatically harder:**
+### The Full Pipeline
 
-- **`COMBAT_LOG_EVENT_UNFILTERED` is effectively dead.** The combat log used to be the gold standard for capturing creature spell casts. In 12.x, cross-addon communication and GUID tracking are severely locked down. You can no longer passively listen to CLEU and get reliable creature spell data.
+```
+Walk near mobs → Addon captures spells → Browse in-game → Export as SQL
+                                                            ├── creature_template_spell (spell lists)
+                                                            ├── smart_scripts (AI with cooldowns)
+                                                            └── new-only (just the gaps)
+```
 
-- **Taint and secret values.** The 12.x engine actively injects opaque C++ `userdata` taints into core UI variables — spell IDs, GUIDs, aura data. The `issecretvalue()` function gates access to these values, and standard Lua `tonumber()`/`tostring()` will silently fail on tainted data. Any addon that touches spell or unit data must wrap every access in `pcall` with explicit secret-value checks, or it will break without warning.
+The SmartAI export isn't just a list of spell IDs — it uses the addon's timing intelligence to estimate cooldowns from observed cast intervals, detects HP-phase abilities (spells only seen below 40% HP get `event_type=2` health triggers instead of timed repeats), and infers target types from cast-vs-aura ratios. It's a first draft you can tune, not a blank slate you have to build from scratch.
 
-- **Instant and hidden casts are invisible.** `UnitCastingInfo` and `UnitChannelInfo` only see spells with visible cast bars. Instant casts, triggered spells, and many boss mechanics never appear in these APIs. On retail, this means a significant portion of a creature's spell list is simply unobservable from the client side.
+## Why This Is Hard Without It
 
-- **Traditional sniffing is expensive.** The classic pipeline — run Ymir packet sniffer, capture traffic, parse with WowPacketParser, manually extract spell data — works but requires dedicated tooling, careful cache clearing, specific movement patterns (walking captures dense data, flying captures sparse), and significant post-processing. It's not something you can hand to a guild of players and say "go help."
+This data doesn't ship in DB2 files. It has to be observed from a live server. In 12.x, that got dramatically harder:
 
-**CreatureCodex solves this with a dual-layer approach:**
+- **`COMBAT_LOG_EVENT_UNFILTERED` is effectively dead.** The combat log was the gold standard for capturing creature casts. In 12.x, cross-addon GUID tracking is severely locked down. Passive CLEU listening no longer gives reliable creature spell data.
 
-The client-side visual scraper does the best it can with the restricted APIs — polling cast bars at 10 Hz, scanning nameplate auras at 5 Hz, wrapping every access in taint-safe helpers. This works on any server with zero patches.
+- **Taint and secret values.** The 12.x engine injects opaque C++ `userdata` taints into spell IDs, GUIDs, and aura data. Standard Lua `tonumber()`/`tostring()` silently fail on tainted values. Any addon touching spell data must wrap every access in `pcall` with `issecretvalue()` checks or it breaks without warning.
 
-The server-side C++ hooks bypass all client restrictions entirely. Four `UnitScript` hooks fire on every `Spell::cast()`, `Spell::SendSpellGo()`, `Spell::SendChannelUpdate()`, and `Unit::_ApplyAura()` — catching 100% of casts including instant, hidden, and triggered spells. The data is broadcast as lightweight addon messages only to nearby players running the addon, so there's zero overhead for players who don't have it.
+- **Instant casts are invisible.** `UnitCastingInfo`/`UnitChannelInfo` only see spells with visible cast bars. Instant casts, triggered spells, and many boss mechanics never appear in these APIs — a significant portion of any creature's spell list is unobservable from the client.
 
-When both layers run together, the addon deduplicates automatically and you get complete, gap-free creature spell databases that can be exported directly as SQL.
+- **Traditional sniffing is expensive.** The Ymir → WowPacketParser pipeline works but requires dedicated tooling, cache clearing, specific movement patterns (walking = dense data, flying = sparse), and heavy post-processing. Not something you can hand to players and say "go help."
+
+**CreatureCodex works around all of this.** The client-side visual scraper polls cast bars at 10 Hz and scans nameplate auras at 5 Hz, wrapping every access in taint-safe helpers. This works on any server — repacks, custom builds, anything running a 12.x client.
+
+For servers that can add C++ hooks, four `UnitScript` callbacks catch 100% of casts including instant and hidden ones, broadcast as lightweight addon messages. Both layers deduplicate automatically — zero gaps, zero noise.
 
 ## How It Works
 
