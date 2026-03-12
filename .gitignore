@@ -1,0 +1,7 @@
+# WoW SavedVariables (contain player data)
+CreatureCodexDB.lua
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
