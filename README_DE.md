@@ -1,6 +1,11 @@
 # CreatureCodex
 
+[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Server-gestützter Kreatur-Zauber- und Aura-Sniffer für TrinityCore-basierte WoW-Emulatoren.
+
+**Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
 CreatureCodex erfasst jeden Zauberspruch, jede Kanalisierung und jede Aura-Anwendung von Kreaturen — einschließlich sofortiger/versteckter Zauber, die die Client-API nicht sehen kann — und speichert sie in einer durchsuchbaren Datenbank, die als SQL für `creature_template_spell` oder SmartAI exportiert werden kann.
 

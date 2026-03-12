@@ -1,6 +1,11 @@
 # CreatureCodex
 
+[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Серверный сниффер заклинаний и аур существ для эмуляторов WoW на базе TrinityCore.
+
+**Репозиторий:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
 CreatureCodex перехватывает каждое произнесение заклинания, каналирование и наложение ауры существами — включая мгновенные/скрытые касты, которые клиентский API не видит — и сохраняет их в базу данных с возможностью просмотра и экспорта в SQL для `creature_template_spell` или SmartAI.
 

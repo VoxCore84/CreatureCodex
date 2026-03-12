@@ -1,6 +1,11 @@
 # CreatureCodex
 
+[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Server-assisted creature spell & aura sniffer for TrinityCore-based WoW emulators.
+
+**Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
 CreatureCodex captures every spell cast, channel, and aura application from creatures — including instant/hidden casts the client API can't see — and stores them in a browsable database you can export as SQL for `creature_template_spell` or SmartAI.
 
