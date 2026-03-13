@@ -79,7 +79,7 @@ When multiple sources run together, the addon deduplicates automatically — you
 |:---:|:---:|
 | ![Browser](screenshots/browser.jpg) | ![Debug](screenshots/debug.jpg) |
 
-**[Watch the demo video](screenshots/CreatureCodex_Demo.mp4)** — walk through a zone, browse captured spells, export SmartAI SQL.
+**[Watch the demo video](https://github.com/VoxCore84/CreatureCodex/releases/download/v1.0.0/CreatureCodex_Demo.mp4)** — walk through a zone, browse captured spells, export SmartAI SQL.
 
 ## Download
 
