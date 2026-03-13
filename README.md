@@ -364,7 +364,9 @@ Use `-o` to override the output filename (single format only). Flags combine: `-
 | `/cc sync` | Reload UI to import WPP sniff data (run `wpp_import.py --addon` first) |
 | `/cc reset` | Clear all stored data (with confirmation) |
 
-### GM Commands (requires RBAC 3012)
+### GM Commands (server-side only)
+
+These commands require the server-side sniffer from the Full Install. They won't exist on your server unless you've added the C++ scripts and RBAC permission from Step 4.
 
 | Command | Description |
 |---------|-------------|
