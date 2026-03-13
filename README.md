@@ -73,9 +73,29 @@ CreatureCodex has three data sources:
 
 When multiple sources run together, the addon deduplicates automatically — you get complete coverage with zero gaps.
 
+## Screenshots & Demo
+
+| Spell Browser | Debug Mode |
+|:---:|:---:|
+| ![Browser](screenshots/browser.jpg) | ![Debug](screenshots/debug.jpg) |
+
+**[Watch the demo video](screenshots/CreatureCodex_Demo.mp4)** — walk through a zone, browse captured spells, export SmartAI SQL.
+
 ## Download
 
-Grab the latest release from the [Releases page](https://github.com/VoxCore84/CreatureCodex/releases). Download `CreatureCodex.zip` and extract it — it contains the client addon, server scripts, tools, and these docs.
+Go to the **[Releases page](https://github.com/VoxCore84/CreatureCodex/releases/latest)** and pick one:
+
+| Download | What it is | Who it's for |
+|----------|-----------|--------------|
+| **`CreatureCodex_Setup.exe`** | GUI installer — walks you through setup step by step | **Most people.** It asks where your WoW and server are, then copies the right files to the right places. |
+| **`CreatureCodex-v1.0.0.zip`** | Full package — everything in one folder | Developers who want to browse the source, or anyone who prefers to copy files manually. |
+
+> **Which should I pick?** If you're not sure, download `CreatureCodex_Setup.exe`. It handles addon placement, sniff tool setup, and server script installation with a 3-step wizard. You can always grab the ZIP later if you need the raw files.
+
+The installer has three modes:
+- **Addon Only** — just the WoW addon, no server changes needed
+- **Addon + Sniff Tools** — addon plus Ymir/WPP pipeline for packet capture analysis
+- **Full Source** — everything above plus C++ server scripts and SQL for 100% spell coverage
 
 ## Installation
 
