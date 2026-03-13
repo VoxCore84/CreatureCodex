@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Your NPCs don't fight. They stand there and auto-attack because `creature_template_spell` is empty and there's no SmartAI telling them what to cast. CreatureCodex fixes that.
+Your NPCs don't fight. They stand there and auto-attack because `creature_template_spell` (the database table that assigns spells to creatures) is empty and there's no SmartAI (TrinityCore's scripted behavior system) telling them what to cast. CreatureCodex fixes that.
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
@@ -76,6 +76,10 @@ CreatureCodex has three data sources:
 
 When multiple sources run together, the addon deduplicates automatically — you get complete coverage with zero gaps.
 
+## Download
+
+Grab the latest release from the [Releases page](https://github.com/VoxCore84/CreatureCodex/releases). Download `CreatureCodex.zip` and extract it — it contains everything: the client addon, server scripts, SQL files, tools, and these docs.
+
 ## Installation
 
 <details>
@@ -95,6 +99,8 @@ If you just want the visual scraper without modifying your server:
 
 **What you get**: Visible casts and channels (anything the WoW API can detect).
 **What you miss**: Instant casts, hidden spells, and auras applied without visible cast bars.
+
+> **Tip:** If the addon doesn't appear in your addon list, check Game Menu → AddOns → enable **"Load out of date AddOns"** at the top. This is needed when the client version is newer than the addon's TOC Interface version.
 
 </details>
 
@@ -229,7 +235,7 @@ mysql -u root -p auth < sql/auth_rbac_creature_codex.sql
 
 ### Step 6: (Optional) Eluna Server Scripts
 
-If you use Eluna, copy `server/lua_scripts/creature_codex_server.lua` to your Eluna scripts directory. This adds:
+If you use Eluna, copy `server/lua_scripts/creature_codex_server.lua` to your Eluna scripts directory (default: `lua_scripts/` next to your worldserver binary). This adds:
 - **Spell list queries**: Addon can request the full spell list for any creature from `creature_template_spell`
 - **Creature info**: Name, faction, level range, classification
 - **Zone completeness**: Query all creatures in a map with their known spell counts
@@ -242,9 +248,20 @@ mysql -u root -p characters < sql/codex_aggregated.sql
 
 If you use a different database, also update `AGGREGATION_DB` at the top of `creature_codex_server.lua` to match.
 
-### Step 7: Install the Client Addon
+### Step 7: Build and Install
 
-Copy `client/` contents to `Interface\AddOns\CreatureCodex\` and rebuild your server.
+1. Copy `client/` contents to `Interface\AddOns\CreatureCodex\`.
+2. Rebuild your server. From your build directory:
+   ```bash
+   # CMake + Make (Linux)
+   cmake --build . --config RelWithDebInfo -j $(nproc)
+
+   # CMake + Ninja
+   ninja -j$(nproc)
+
+   # Visual Studio (Windows)
+   # Open the .sln and build in Release or RelWithDebInfo
+   ```
 
 </details>
 
@@ -256,7 +273,12 @@ If you use Ymir to capture packets and WowPacketParser to parse them, you can im
 ### Requirements
 
 - Python 3.10+
-- WowPacketParser `.txt` output files (parsed from `.pkt` captures)
+- WowPacketParser `.txt` output files (parsed from `.pkt` captures). These are the human-readable text files WPP generates — they look like this:
+  ```
+  ServerToClient: SMSG_SPELL_GO (0x0132) Length: 84 ConnIdx: 0 Time: 01/15/2026 10:23:45.123
+  CasterGUID: Full: 0x0000AB1234560001 Type: Creature Entry: 1234 ...
+  SpellID: 56789
+  ```
 
 ### Quick Start
 
@@ -334,6 +356,20 @@ The export panel offers four tabs:
 2. **SQL** — `INSERT INTO creature_template_spell` statements ready to apply
 3. **SmartAI** — `INSERT INTO smart_scripts` for AI-driven casting
 4. **New Only** — Same as SQL but filters to spells not already in `creature_template_spell`
+
+### Applying the Exported SQL
+
+After exporting from the addon, you have SQL text ready to run against your `world` database. Here are three common ways to apply it:
+
+- **HeidiSQL** (Windows): Connect to your DB, select the `world` database, open a new Query tab, paste the SQL, and hit Execute (F9).
+- **phpMyAdmin** (web): Select the `world` database, go to the SQL tab, paste, and click Go.
+- **MySQL CLI**:
+  ```bash
+  mysql -u root -p world < exported_spells.sql
+  ```
+  Or paste directly into an interactive `mysql` session after running `USE world;`.
+
+The SQL and SmartAI exports include `DELETE` + `INSERT` pairs so they're safe to re-run — they won't create duplicates.
 
 ### Minimap Button
 

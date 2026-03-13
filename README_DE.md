@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Ihre NPCs kämpfen nicht. Sie stehen da und auto-attacken, weil `creature_template_spell` leer ist und kein SmartAI ihnen sagt, was sie zaubern sollen. CreatureCodex behebt das.
+Ihre NPCs kämpfen nicht. Sie stehen da und auto-attacken, weil `creature_template_spell` (die Datenbanktabelle, die Kreaturen Zauber zuweist) leer ist und kein SmartAI (TrinityCore's skriptgesteuertes Verhaltenssystem) ihnen sagt, was sie zaubern sollen. CreatureCodex behebt das.
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
@@ -76,6 +76,10 @@ CreatureCodex hat drei Datenquellen:
 
 Bei gemeinsamer Nutzung mehrerer Quellen dedupliziert das Addon automatisch — vollständige Abdeckung ohne Lücken.
 
+## Download
+
+Laden Sie die neueste Version von der [Releases-Seite](https://github.com/VoxCore84/CreatureCodex/releases) herunter. Laden Sie `CreatureCodex.zip` herunter und entpacken Sie es — es enthält alles: das Client-Addon, Server-Skripte, SQL-Dateien, Tools und diese Dokumentation.
+
 ## Installation
 
 <details>
@@ -95,6 +99,8 @@ Wenn Sie nur den visuellen Scanner ohne Server-Modifikation möchten:
 
 **Was Sie bekommen**: Sichtbare Zauber und Kanalisierungen (alles, was die WoW-API erkennen kann).
 **Was Sie verpassen**: Sofortzauber, versteckte Zauber und Auren ohne sichtbare Zauberleiste.
+
+> **Tipp:** Falls das Addon nicht in Ihrer Addon-Liste erscheint, gehen Sie zu Spielmenü → Addons → aktivieren Sie oben **"Veraltete AddOns laden"**. Dies ist nötig, wenn die Client-Version neuer ist als die TOC-Interface-Version des Addons.
 
 </details>
 
@@ -229,7 +235,7 @@ mysql -u root -p auth < sql/auth_rbac_creature_codex.sql
 
 ### Schritt 6: (Optional) Eluna-Server-Skripte
 
-Bei Verwendung von Eluna kopieren Sie `server/lua_scripts/creature_codex_server.lua` in Ihr Eluna-Skriptverzeichnis. Dies fügt hinzu:
+Bei Verwendung von Eluna kopieren Sie `server/lua_scripts/creature_codex_server.lua` in Ihr Eluna-Skriptverzeichnis (Standard: `lua_scripts/` neben Ihrer worldserver-Binary). Dies fügt hinzu:
 - **Zauberlisten-Abfragen**: Addon kann die vollständige Zauberliste aus `creature_template_spell` anfordern
 - **Kreatur-Informationen**: Name, Fraktion, Levelbereich, Klassifizierung
 - **Zonen-Vollständigkeit**: Alle Kreaturen einer Karte mit bekannten Zauberzahlen abfragen
@@ -242,9 +248,20 @@ mysql -u root -p characters < sql/codex_aggregated.sql
 
 Bei Verwendung einer anderen Datenbank auch `AGGREGATION_DB` am Anfang von `creature_codex_server.lua` anpassen.
 
-### Schritt 7: Client-Addon installieren
+### Schritt 7: Kompilieren und installieren
 
-Kopieren Sie den `client/`-Inhalt nach `Interface\AddOns\CreatureCodex\` und kompilieren Sie Ihren Server neu.
+1. Kopieren Sie den `client/`-Inhalt nach `Interface\AddOns\CreatureCodex\`.
+2. Kompilieren Sie Ihren Server neu. Aus Ihrem Build-Verzeichnis:
+   ```bash
+   # CMake + Make (Linux)
+   cmake --build . --config RelWithDebInfo -j $(nproc)
+
+   # CMake + Ninja
+   ninja -j$(nproc)
+
+   # Visual Studio (Windows)
+   # .sln öffnen und in Release oder RelWithDebInfo kompilieren
+   ```
 
 </details>
 
@@ -256,7 +273,12 @@ Wenn Sie Ymir für Paketmitschnitte und WowPacketParser zum Parsen verwenden, k�
 ### Voraussetzungen
 
 - Python 3.10+
-- WowPacketParser `.txt`-Ausgabedateien (geparst aus `.pkt`-Mitschnitten)
+- WowPacketParser `.txt`-Ausgabedateien (geparst aus `.pkt`-Mitschnitten). Das sind die menschenlesbaren Textdateien, die WPP generiert — sie sehen so aus:
+  ```
+  ServerToClient: SMSG_SPELL_GO (0x0132) Length: 84 ConnIdx: 0 Time: 01/15/2026 10:23:45.123
+  CasterGUID: Full: 0x0000AB1234560001 Type: Creature Entry: 1234 ...
+  SpellID: 56789
+  ```
 
 ### Schnellstart
 
@@ -334,6 +356,20 @@ Das Export-Panel bietet vier Tabs:
 2. **SQL** — Fertige `INSERT INTO creature_template_spell`-Anweisungen
 3. **SmartAI** — `INSERT INTO smart_scripts` für AI-gesteuerte Zauber
 4. **New Only** — Wie SQL, aber nur Zauber die noch nicht in `creature_template_spell` sind
+
+### Exportiertes SQL anwenden
+
+Nach dem Export aus dem Addon haben Sie SQL-Text, der gegen Ihre `world`-Datenbank ausgeführt werden kann. Drei gängige Wege:
+
+- **HeidiSQL** (Windows): Mit der DB verbinden, `world`-Datenbank auswählen, neuen Query-Tab öffnen, SQL einfügen und Execute (F9) drücken.
+- **phpMyAdmin** (Web): `world`-Datenbank auswählen, SQL-Tab öffnen, einfügen und Go klicken.
+- **MySQL CLI**:
+  ```bash
+  mysql -u root -p world < exported_spells.sql
+  ```
+  Oder direkt in eine interaktive `mysql`-Sitzung einfügen nach `USE world;`.
+
+Die SQL- und SmartAI-Exporte enthalten `DELETE` + `INSERT`-Paare und sind daher sicher wiederholbar — keine Duplikate.
 
 ### Minimap-Button
 

@@ -3,7 +3,7 @@
 [![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Ваши NPC не сражаются. Они стоят и бьют автоатакой, потому что `creature_template_spell` пуст и нет SmartAI, который бы говорил им что кастовать. CreatureCodex решает эту проблему.
+Ваши NPC не сражаются. Они стоят и бьют автоатакой, потому что `creature_template_spell` (таблица базы данных, назначающая заклинания существам) пуст и нет SmartAI (система скриптового поведения TrinityCore), который бы говорил им что кастовать. CreatureCodex решает эту проблему.
 
 **Репозиторий:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
@@ -76,6 +76,10 @@ CreatureCodex имеет три источника данных:
 
 При совместной работе нескольких источников аддон автоматически удаляет дубликаты — полное покрытие без пробелов.
 
+## Скачать
+
+Загрузите последний релиз со [страницы релизов](https://github.com/VoxCore84/CreatureCodex/releases). Скачайте `CreatureCodex.zip` и распакуйте — в архиве всё: клиентский аддон, серверные скрипты, SQL-файлы, инструменты и документация.
+
 ## Установка
 
 <details>
@@ -95,6 +99,8 @@ CreatureCodex имеет три источника данных:
 
 **Что вы получите**: Видимые касты и каналирования (всё, что может обнаружить WoW API).
 **Что вы пропустите**: Мгновенные касты, скрытые заклинания и ауры без видимой полосы каста.
+
+> **Совет:** Если аддон не отображается в списке аддонов, откройте Меню игры → Аддоны → включите **«Загружать устаревшие аддоны»** вверху. Это нужно, когда версия клиента новее, чем Interface-версия в TOC-файле аддона.
 
 </details>
 
@@ -229,7 +235,7 @@ mysql -u root -p auth < sql/auth_rbac_creature_codex.sql
 
 ### Шаг 6: (Опционально) Серверные скрипты Eluna
 
-При использовании Eluna, скопируйте `server/lua_scripts/creature_codex_server.lua` в директорию скриптов Eluna. Это добавит:
+При использовании Eluna, скопируйте `server/lua_scripts/creature_codex_server.lua` в директорию скриптов Eluna (по умолчанию: `lua_scripts/` рядом с бинарником worldserver). Это добавит:
 - **Запросы списков заклинаний**: Аддон может запросить полный список заклинаний из `creature_template_spell`
 - **Информация о существе**: Имя, фракция, диапазон уровней, классификация
 - **Полнота по зоне**: Запрос всех существ на карте с количеством известных заклинаний
@@ -242,9 +248,20 @@ mysql -u root -p characters < sql/codex_aggregated.sql
 
 Если используете другую базу данных, также обновите `AGGREGATION_DB` в начале файла `creature_codex_server.lua`.
 
-### Шаг 7: Установить клиентский аддон
+### Шаг 7: Сборка и установка
 
-Скопируйте содержимое `client/` в `Interface\AddOns\CreatureCodex\` и пересоберите сервер.
+1. Скопируйте содержимое `client/` в `Interface\AddOns\CreatureCodex\`.
+2. Пересоберите сервер. Из директории сборки:
+   ```bash
+   # CMake + Make (Linux)
+   cmake --build . --config RelWithDebInfo -j $(nproc)
+
+   # CMake + Ninja
+   ninja -j$(nproc)
+
+   # Visual Studio (Windows)
+   # Откройте .sln и соберите в Release или RelWithDebInfo
+   ```
 
 </details>
 
@@ -256,7 +273,12 @@ mysql -u root -p characters < sql/codex_aggregated.sql
 ### Требования
 
 - Python 3.10+
-- `.txt` файлы вывода WowPacketParser (разобранные из `.pkt` дампов)
+- `.txt` файлы вывода WowPacketParser (разобранные из `.pkt` дампов). Это человекочитаемые текстовые файлы WPP — они выглядят так:
+  ```
+  ServerToClient: SMSG_SPELL_GO (0x0132) Length: 84 ConnIdx: 0 Time: 01/15/2026 10:23:45.123
+  CasterGUID: Full: 0x0000AB1234560001 Type: Creature Entry: 1234 ...
+  SpellID: 56789
+  ```
 
 ### Быстрый старт
 
@@ -334,6 +356,20 @@ python tools/wpp_import.py --output /путь/к/CreatureCodexDB.lua sniff1.txt
 2. **SQL** — Готовые `INSERT INTO creature_template_spell`
 3. **SmartAI** — `INSERT INTO smart_scripts` для AI-кастов
 4. **New Only** — Как SQL, но только заклинания отсутствующие в `creature_template_spell`
+
+### Применение экспортированного SQL
+
+После экспорта из аддона у вас есть SQL-текст, готовый к выполнению в базе данных `world`. Три распространённых способа:
+
+- **HeidiSQL** (Windows): Подключитесь к БД, выберите базу `world`, откройте новую вкладку запросов, вставьте SQL и нажмите Execute (F9).
+- **phpMyAdmin** (веб): Выберите базу `world`, перейдите на вкладку SQL, вставьте и нажмите Go.
+- **MySQL CLI**:
+  ```bash
+  mysql -u root -p world < exported_spells.sql
+  ```
+  Или вставьте напрямую в интерактивную сессию `mysql` после команды `USE world;`.
+
+Экспорт SQL и SmartAI содержит пары `DELETE` + `INSERT`, поэтому безопасен для повторного применения — дубликатов не будет.
 
 ### Кнопка на миникарте
 
