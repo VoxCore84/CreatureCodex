@@ -23,9 +23,9 @@ CreatureCodex verwandelt Beobachtung in funktionierendes SmartAI. Sie schauen Mo
 ### Die vollständige Pipeline
 
 ```
-                              ┌─ Visueller Scanner (Client-Addon, funktioniert überall)
-An Mobs herangehen / Sniffen ─┼─ Server-Hooks (C++ UnitScript, 100% Abdeckung)
-                              └─ WPP-Import (offline, aus Ymir-Paketmitschnitten)
+                          ┌─ Visueller Scanner (Client-Addon, funktioniert überall)
+An Mobs herangehen ───────┼─ Server-Hooks (C++ UnitScript, 100% Abdeckung)
+                          └─ Ymir-Integration (Auto-Merge aus Paketmitschnitten)
                                             │
                                             ▼
                                 Im Spiel durchsuchen → Als SQL exportieren
@@ -46,13 +46,13 @@ Diese Daten werden nicht in DB2-Dateien mitgeliefert. Sie müssen von einem Live
 
 - **Sofortzauber sind unsichtbar.** `UnitCastingInfo`/`UnitChannelInfo` sehen nur Zauber mit Zauberleiste. Sofortzauber, getriggerte Zauber und viele Boss-Mechaniken erscheinen nie — ein erheblicher Teil jeder Kreatur-Zauberliste ist client-seitig nicht beobachtbar.
 
-- **Traditionelles Sniffen ist aufwendig.** Die Ymir → WowPacketParser Pipeline funktioniert, erfordert aber spezialisiertes Tooling, Cache-Leeren, bestimmte Bewegungsmuster (Laufen = dicht, Fliegen = dünn) und erhebliche Nachbearbeitung.
+- **Traditionelles Sniffen erfordert Nachbearbeitung.** Die Ymir → WowPacketParser Pipeline liefert die besten Daten, aber die Umwandlung roher Paketmitschnitte in nutzbare Zauberlisten bedeutete immer Offline-Parsing, manuelle Überprüfung und handgeschriebenes SQL.
 
 **CreatureCodex umgeht all das.** Der client-seitige Scanner pollt Zauberleisten mit 10 Hz und scannt Auren mit 5 Hz mit Taint-sicheren Wrappern. Funktioniert auf jedem Server — Repacks, Custom Builds, alles mit 12.x-Client.
 
 Für Server mit C++-Hook-Möglichkeit fangen vier `UnitScript`-Callbacks 100% aller Casts ab, einschließlich sofortiger und versteckter. Beide Schichten deduplizieren automatisch — null Lücken, null Rauschen.
 
-Und wenn Sie bereits Ymir-Paketmitschnitte haben, kann das enthaltene Python-Tool WPP-Ausgaben direkt importieren — keine Live-Sitzung nötig.
+Und wenn Sie mit Ymir sniffen, integriert sich CreatureCodex direkt — starten Sie das enthaltene Tool auf Ihre WPP-Ausgabe, `/reload`, und das Addon führt Sniff-Daten automatisch mit Scanner-Daten zusammen. Oder überspringen Sie das Addon und generieren Sie SQL direkt aus Ihren Paketmitschnitten.
 
 ## Funktionsweise
 
@@ -68,11 +68,12 @@ CreatureCodex hat drei Datenquellen:
    - Erfasst 100% aller Zauber, einschließlich sofortiger/versteckter
    - Sendet nur an Spieler in der Nähe (100 Yard) mit installiertem CreatureCodex
 
-3. **WPP-Import** (offline, aus Ymir-Paketmitschnitten)
-   - Python-Skript parst `.txt`-Ausgabe von WowPacketParser
-   - Extrahiert Kreatur-Entries, Zauber-IDs, Schulen und Zeitstempel aus SMSG_SPELL_GO / SMSG_SPELL_START / SMSG_AURA_UPDATE
-   - Generiert `CreatureCodexDB.lua` SavedVariables, die das Addon direkt lädt
-   - Schätzt Cooldowns aus beobachteten Cast-Intervallen
+3. **Ymir-Integration** (Live-Merge aus Paketmitschnitten)
+   - Starten Sie Ymir wie gewohnt neben dem Spiel — CreatureCodex arbeitet parallel
+   - Nachdem WowPacketParser Ihre `.pkt`-Dateien verarbeitet hat, konvertieren Sie die Ausgabe mit dem enthaltenen Python-Tool
+   - Das Addon führt Sniff-Daten beim `/reload` automatisch zusammen — kein Verlassen des Spiels nötig
+   - Fängt Sofortzauber, versteckte Zauber und getriggerte Fähigkeiten ab, die der visuelle Scanner nicht sehen kann
+   - Generiert auch SQL direkt aus Sniff-Daten, wenn Sie das Addon überspringen möchten
 
 Bei gemeinsamer Nutzung mehrerer Quellen dedupliziert das Addon automatisch — vollständige Abdeckung ohne Lücken.
 
@@ -266,61 +267,71 @@ Bei Verwendung einer anderen Datenbank auch `AGGREGATION_DB` am Anfang von `crea
 </details>
 
 <details>
-<summary><strong>WPP-Import (Ymir / Sniff-Benutzer)</strong> — zum Aufklappen klicken</summary>
+<summary><strong>Ymir-Integration (Sniff-Benutzer)</strong> — zum Aufklappen klicken</summary>
 
-Wenn Sie Ymir für Paketmitschnitte und WowPacketParser zum Parsen verwenden, können Sie Kreatur-Zauberdaten aus `.txt`-Ausgabedateien importieren — ohne Live-Server-Sitzung.
+Wenn Sie mit Ymir sniffen, arbeitet CreatureCodex parallel dazu. Das Addon erfasst, was die Client-API in Echtzeit sehen kann, und das enthaltene Python-Tool füllt die Lücken — Sofortzauber, versteckte Zauber, getriggerte Fähigkeiten — aus Ihrer WowPacketParser-Ausgabe. Alles wird im Addon automatisch zusammengeführt. Sie verlassen nie das Spiel.
+
+### Funktionsweise
+
+1. **Normal spielen** mit Ymir im Hintergrund und installiertem CreatureCodex
+2. **Das Addon erfasst Live-Daten** — sichtbare Zauber und Auren über den visuellen Scanner
+3. **Pakete parsen** — WowPacketParser auf Ihre `.pkt`-Dateien ausführen (das kann passieren, während das Spiel noch offen ist)
+4. **Ergebnisse ins Addon einspeisen:**
+   ```bash
+   python tools/wpp_import.py --addon sniff_output.txt
+   ```
+   Die generierte `CreatureCodexWPP.lua` nach `WTF/Account/<IHR_ACCOUNT>/SavedVariables/` kopieren
+5. **`/reload` im Spiel** — das Addon führt die Sniff-Daten automatisch zusammen und meldet den Import:
+   ```
+   [CreatureCodex] Imported sniff data: +142 creatures, +891 spells from WPP.
+   ```
+6. **Durchsuchen und exportieren** mit `/cc` — Ihre Daten enthalten jetzt sowohl Scanner-Beobachtungen als auch paketbestätigte Zauber
+
+Die Sniff-Daten füllen genau das, was der visuelle Scanner nicht sehen kann: Sofortzauber, serverseitig getriggerte Zauber und Auren, die ohne sichtbare Zauberleiste angelegt werden. Das Addon dedupliziert alles — kein Doppelzählen.
 
 ### Voraussetzungen
 
 - Python 3.10+
-- WowPacketParser `.txt`-Ausgabedateien (geparst aus `.pkt`-Mitschnitten). Das sind die menschenlesbaren Textdateien, die WPP generiert — sie sehen so aus:
-  ```
-  ServerToClient: SMSG_SPELL_GO (0x0132) Length: 84 ConnIdx: 0 Time: 01/15/2026 10:23:45.123
-  CasterGUID: Full: 0x0000AB1234560001 Type: Creature Entry: 1234 ...
-  SpellID: 56789
-  ```
+- WowPacketParser `.txt`-Ausgabedateien (die menschenlesbaren Textdateien, die WPP aus `.pkt`-Mitschnitten generiert)
 
-### Schnellstart
+### Direkt-SQL (Addon überspringen)
+
+Wenn Sie nicht im Spiel durchsuchen möchten und nur SQL aus Ihren Sniff-Daten brauchen:
 
 ```bash
-# Import aus einer oder mehreren WPP-Textdateien
+# creature_template_spell SQL (Standard)
 python tools/wpp_import.py sniff1.txt sniff2.txt
+# → creature_template_spell.sql
 
-# Mit bestehenden Addon-Daten zusammenführen (behält Ihre In-Game-Entdeckungen)
-python tools/wpp_import.py --merge WTF/Account/IHR_ACCOUNT/SavedVariables/CreatureCodexDB.lua sniff1.txt
+# SmartAI-Stubs mit geschätzten Cooldowns
+python tools/wpp_import.py --smartai sniff1.txt
+# → smart_scripts.sql
 
-# Eigenen Ausgabepfad angeben
-python tools/wpp_import.py --output /pfad/zu/CreatureCodexDB.lua sniff1.txt
+# Beides auf einmal
+python tools/wpp_import.py --sql --smartai sniff1.txt
+
+# Direkt anwenden
+mysql -u root -p world < creature_template_spell.sql
 ```
 
-### Was geparst wird
+Das Skript parst SMSG_SPELL_GO, SMSG_SPELL_START und SMSG_AURA_UPDATE Opcodes. Es schätzt Cooldowns aus beobachteten Cast-Intervallen und leitet Zieltypen aus dem Cast-zu-Aura-Verhältnis ab — dieselbe Intelligenz, die das Addon nutzt.
 
-Das Skript extrahiert Daten aus drei WPP-Opcodes:
+### Ausgabeformate
 
-| Opcode | Was erfasst wird |
-|--------|-----------------|
-| `SMSG_SPELL_GO` | Abgeschlossene Zauber (Kreatur-Entry, Zauber-ID, Schule) |
-| `SMSG_SPELL_START` | Zauber-Starts (gleiche Felder) |
-| `SMSG_AURA_UPDATE` | Aura-Anwendungen auf Kreaturen |
+| Flag | Ausgabedatei | Inhalt |
+|------|-------------|--------|
+| `--sql` (Standard) | `creature_template_spell.sql` | DELETE + INSERT Paare für Zauberlisten |
+| `--smartai` | `smart_scripts.sql` | SmartAI-Stubs mit Cooldown-Schätzungen |
+| `--addon` | `CreatureCodexWPP.lua` | Auto-Merge ins Addon bei `/reload` |
+| `--lua` | `CreatureCodexDB.lua` | Vollständiger SavedVariables-Ersatz |
 
-Es schätzt auch Cooldowns aus beobachteten Zeitstempeln — dieselben Daten, die das Addon für den SmartAI-Export nutzt.
-
-### Ausgabe
-
-Das Skript generiert eine `CreatureCodexDB.lua`-Datei im selben Format wie die Addon-SavedVariables. Zum Laden:
-
-1. Kopieren Sie die Ausgabedatei nach:
-   ```
-   WTF/Account/<IHR_ACCOUNT>/SavedVariables/CreatureCodexDB.lua
-   ```
-2. Einloggen und `/reload` — das Addon übernimmt die importierten Daten sofort.
-3. Durchsuchen und exportieren wie gewohnt mit `/cc` und `/cc export`.
+Mit `-o` den Ausgabedateinamen überschreiben (nur bei einzelnem Format). Flags kombinierbar: `--sql --smartai` generiert beide SQL-Dateien in einem Durchlauf.
 
 ### Tipps
 
-- **Laufen liefert dichtere Daten als Fliegen.** Beim Sniffen zu Fuß durch Gebiete gehen für bessere Abdeckung.
-- **Mehrere Sniffs verschmelzen sauber.** Den Importer mit mehreren `.txt`-Dateien starten, um Daten aus verschiedenen Sitzungen zu kombinieren.
-- **Zusammenführung bewahrt Ihre Arbeit.** `--merge` verwenden, um WPP-Importe mit bereits im Spiel erfassten Daten zu kombinieren. Cast-Zähler und Cooldown-Schätzungen werden von der Quelle mit mehr Beobachtungen übernommen.
+- **Laufen liefert dichtere Daten als Fliegen.** Beim Sniffen zu Fuß durch Gebiete gehen für bessere Kreatur-Zauber-Abdeckung.
+- **Mehrere Sniffs verschmelzen sauber.** Mehrere `.txt`-Dateien übergeben, um Daten aus verschiedenen Sitzungen zu kombinieren.
+- **Scanner + Sniff = vollständiges Bild.** Der visuelle Scanner liefert Zaubernamen und Echtzeit-Browsing; die Sniff-Daten liefern Zauber-IDs und volle Abdeckung. Zusammen besser als jedes einzeln.
 
 </details>
 
@@ -411,7 +422,7 @@ CreatureCodex/
     auth_rbac_creature_codex.sql  -- RBAC-Berechtigung für .codex
     codex_aggregated.sql          -- Mehrspieler-Aggregationstabelle
   tools/
-    wpp_import.py                 -- WowPacketParser → SavedVariables Importer
+    wpp_import.py                 -- WowPacketParser → SQL / Addon-Import-Tool
   screenshots/                    -- README-Screenshots
   README.md                       -- Englische Version
   README_RU.md                    -- Russische Version

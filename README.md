@@ -24,8 +24,8 @@ CreatureCodex turns observation into working SmartAI. You watch mobs fight, it w
 
 ```
                             ┌─ Visual Scraper (client addon, works everywhere)
-Walk near mobs / sniff ─────┼─ Server Hooks (C++ UnitScript, 100% coverage)
-                            └─ WPP Import (offline, from Ymir packet captures)
+Walk near mobs ─────────────┼─ Server Hooks (C++ UnitScript, 100% coverage)
+                            └─ Ymir Integration (auto-merge from packet captures)
                                           │
                                           ▼
                               Browse in-game → Export as SQL
@@ -46,13 +46,13 @@ This data doesn't ship in DB2 files. It has to be observed from a live server. I
 
 - **Instant casts are invisible.** `UnitCastingInfo`/`UnitChannelInfo` only see spells with visible cast bars. Instant casts, triggered spells, and many boss mechanics never appear in these APIs — a significant portion of any creature's spell list is unobservable from the client.
 
-- **Traditional sniffing is expensive.** The Ymir → WowPacketParser pipeline works but requires dedicated tooling, cache clearing, specific movement patterns (walking = dense data, flying = sparse), and heavy post-processing. Not something you can hand to players and say "go help."
+- **Traditional sniffing requires post-processing.** The Ymir → WowPacketParser pipeline produces the best data, but turning raw packet captures into usable spell lists has always meant offline parsing, manual review, and hand-written SQL.
 
 **CreatureCodex works around all of this.** The client-side visual scraper polls cast bars at 10 Hz and scans nameplate auras at 5 Hz, wrapping every access in taint-safe helpers. This works on any server — repacks, custom builds, anything running a 12.x client.
 
 For servers that can add C++ hooks, four `UnitScript` callbacks catch 100% of casts including instant and hidden ones, broadcast as lightweight addon messages. Both layers deduplicate automatically — zero gaps, zero noise.
 
-And if you already have Ymir packet captures, the included Python tool can import WPP output directly — no live server session needed.
+And if you sniff with Ymir, CreatureCodex integrates directly — run the included tool on your WPP output, `/reload`, and the addon merges sniff data with scraper data automatically. Or skip the addon and generate SQL straight from your packet captures.
 
 ## How It Works
 
@@ -68,11 +68,12 @@ CreatureCodex has three data sources:
    - Catches 100% of casts including instant/hidden ones the client never sees
    - Broadcasts only to nearby players (100 yd) who have CreatureCodex installed
 
-3. **WPP import** (offline, from Ymir packet captures)
-   - Python script parses WowPacketParser `.txt` output
-   - Extracts creature entries, spell IDs, schools, and timestamps from SMSG_SPELL_GO / SMSG_SPELL_START / SMSG_AURA_UPDATE
-   - Generates `CreatureCodexDB.lua` SavedVariables that the addon loads directly
-   - Estimates cooldowns from observed cast intervals
+3. **Ymir integration** (live merge from packet captures)
+   - Run Ymir alongside the game as usual — CreatureCodex works in parallel
+   - After WowPacketParser processes your `.pkt` files, run the included Python tool to convert the output
+   - The addon auto-merges sniff data on `/reload` — no need to exit the game
+   - Catches instant casts, hidden spells, and triggered abilities the visual scraper can't see
+   - Also generates SQL directly from sniff data if you prefer to skip the addon entirely
 
 When multiple sources run together, the addon deduplicates automatically — you get complete coverage with zero gaps.
 
@@ -266,61 +267,79 @@ If you use a different database, also update `AGGREGATION_DB` at the top of `cre
 </details>
 
 <details>
-<summary><strong>WPP Import (Ymir / Sniff Users)</strong> — click to expand</summary>
+<summary><strong>Ymir Integration (Sniff Users)</strong> — click to expand</summary>
 
-If you use Ymir to capture packets and WowPacketParser to parse them, you can import creature spell data from `.txt` output files without any live server session.
+If you sniff with Ymir, CreatureCodex works alongside it. The addon captures what the client can see in real time (~80% of spells), and a background companion automatically feeds WowPacketParser data into the addon to fill in the rest — instant casts, hidden spells, triggered abilities. Everything merges inside the game. You never exit.
+
+### Setup (One Time)
+
+1. Install the addon normally (see Client-Only Install above)
+2. Start the background watcher alongside Ymir:
+   ```bash
+   python tools/wpp_watcher.py
+   ```
+   It auto-detects your WoW install and SavedVariables folder. If auto-detection fails, point it manually:
+   ```bash
+   python tools/wpp_watcher.py --wow-dir "C:/WoW/_retail_" --watch-dir "C:/sniffs"
+   ```
+
+### Playing
+
+1. **Play normally** with Ymir + watcher running in the background
+2. **The addon captures visible casts and auras** in real time via the visual scraper
+3. **The watcher processes your WPP output** automatically as files appear — no manual steps
+4. **Click "Sync Sniff"** in the addon's browser panel (bottom bar) to pull in the new data
+5. The addon reports what it imported:
+   ```
+   [CreatureCodex] Imported sniff data: +142 creatures, +891 spells from WPP.
+   ```
+6. **Browse and export** with `/cc` — your data now includes both scraper observations and packet-confirmed spells
+
+That's it. The visual scraper gives you spell names and real-time browsing. The sniff data fills in instant casts, server-side triggers, and hidden auras the client can't see. The addon deduplicates everything — together they're better than either alone.
 
 ### Requirements
 
 - Python 3.10+
-- WowPacketParser `.txt` output files (parsed from `.pkt` captures). These are the human-readable text files WPP generates — they look like this:
-  ```
-  ServerToClient: SMSG_SPELL_GO (0x0132) Length: 84 ConnIdx: 0 Time: 01/15/2026 10:23:45.123
-  CasterGUID: Full: 0x0000AB1234560001 Type: Creature Entry: 1234 ...
-  SpellID: 56789
-  ```
+- WowPacketParser (produces `.txt` output from Ymir `.pkt` captures)
 
-### Quick Start
+### Direct SQL (Skip the Addon)
+
+If you don't need to browse in-game and just want SQL from your sniff data:
 
 ```bash
-# Import from one or more WPP text files
+# creature_template_spell SQL (default)
 python tools/wpp_import.py sniff1.txt sniff2.txt
+# → creature_template_spell.sql
 
-# Merge into existing addon data (keeps your in-game discoveries)
-python tools/wpp_import.py --merge WTF/Account/YOUR_ACCOUNT/SavedVariables/CreatureCodexDB.lua sniff1.txt
+# SmartAI stubs with estimated cooldowns
+python tools/wpp_import.py --smartai sniff1.txt
+# → smart_scripts.sql
 
-# Custom output path
-python tools/wpp_import.py --output /path/to/CreatureCodexDB.lua sniff1.txt
+# Both at once
+python tools/wpp_import.py --sql --smartai sniff1.txt
+
+# Apply directly
+mysql -u root -p world < creature_template_spell.sql
 ```
 
-### What It Parses
+The script parses `SMSG_SPELL_GO`, `SMSG_SPELL_START`, and `SMSG_AURA_UPDATE` opcodes. It estimates cooldowns from observed cast intervals and infers target types from cast-vs-aura ratios — the same intelligence the addon uses.
 
-The script extracts creature spell data from three WPP opcodes:
+### Output Formats
 
-| Opcode | What It Captures |
-|--------|-----------------|
-| `SMSG_SPELL_GO` | Completed spell casts (creature entry, spell ID, school) |
-| `SMSG_SPELL_START` | Spell cast starts (same fields) |
-| `SMSG_AURA_UPDATE` | Aura applications on creatures |
+| Flag | Output File | Contents |
+|------|-------------|----------|
+| `--sql` (default) | `creature_template_spell.sql` | DELETE + INSERT pairs for spell lists |
+| `--smartai` | `smart_scripts.sql` | SmartAI stubs with cooldown estimates |
+| `--addon` | `CreatureCodexWPP.lua` | Auto-merge into addon on `/reload` |
+| `--lua` | `CreatureCodexDB.lua` | Full SavedVariables replacement |
 
-It also estimates cooldowns from observed cast timestamps — the same data the addon uses for SmartAI export.
-
-### Output
-
-The script generates a `CreatureCodexDB.lua` file in the same format the addon uses for SavedVariables. To load it:
-
-1. Copy the output file to:
-   ```
-   WTF/Account/<YOUR_ACCOUNT>/SavedVariables/CreatureCodexDB.lua
-   ```
-2. Log in and `/reload` — the addon picks up the imported data immediately.
-3. Browse and export as usual with `/cc` and `/cc export`.
+Use `-o` to override the output filename (single format only). Flags combine: `--sql --smartai` generates both SQL files in one pass.
 
 ### Tips
 
 - **Walking produces denser data than flying.** When sniffing, walk through areas on foot for better creature spell coverage.
-- **Multiple sniffs merge cleanly.** Run the importer with multiple `.txt` files to combine data from different sessions.
-- **Merge preserves your work.** Use `--merge` to combine WPP imports with data you've already captured in-game. Cast counts and cooldown estimates are kept from whichever source has more observations.
+- **Multiple sniffs merge cleanly.** Pass multiple `.txt` files to combine data from different sessions.
+- **Scraper + sniff = complete picture.** The visual scraper gives you spell names and real-time browsing; the sniff data gives you spell IDs and full coverage. Together they're better than either alone.
 
 </details>
 
@@ -411,7 +430,8 @@ CreatureCodex/
     auth_rbac_creature_codex.sql   -- RBAC permission for .codex command
     codex_aggregated.sql           -- Multi-player aggregation table
   tools/
-    wpp_import.py                  -- WowPacketParser → SavedVariables importer
+    wpp_import.py                  -- WowPacketParser → SQL / addon import tool
+    wpp_watcher.py                 -- Background companion for Ymir (auto-import)
   screenshots/                     -- README screenshots
   README.md                        -- This file
   README_RU.md                     -- Russian translation

@@ -95,6 +95,84 @@ local function InitDB()
 end
 
 -- ============================================================
+-- WPP sniff data merge (auto-import on login/reload)
+-- ============================================================
+
+local function MergeWPPData()
+    if not CreatureCodexWPP or not CreatureCodexWPP.creatures then return 0, 0 end
+    if not CreatureCodexDB then return 0, 0 end
+
+    local newCreatures, newSpells = 0, 0
+    local db = CreatureCodexDB.creatures
+
+    for entry, wppCreature in pairs(CreatureCodexWPP.creatures) do
+        if not CREATURE_BLACKLIST[entry] then
+            if not db[entry] then
+                db[entry] = {
+                    name = wppCreature.name or ("Creature " .. entry),
+                    spells = {},
+                    firstSeen = wppCreature.firstSeen or time(),
+                    lastSeen = wppCreature.lastSeen or time(),
+                }
+                newCreatures = newCreatures + 1
+            end
+
+            local creature = db[entry]
+            if wppCreature.name and wppCreature.name ~= "Unknown" and wppCreature.name ~= ("Creature " .. entry) then
+                creature.name = wppCreature.name
+            end
+
+            for spellId, wppSpell in pairs(wppCreature.spells or {}) do
+                if not SPELL_BLACKLIST[spellId] then
+                    if not creature.spells[spellId] then
+                        creature.spells[spellId] = {
+                            name = wppSpell.name or ("Spell " .. spellId),
+                            school = wppSpell.school or 0,
+                            castCount = wppSpell.castCount or 0,
+                            auraCount = wppSpell.auraCount or 0,
+                            firstSeen = wppSpell.firstSeen or time(),
+                            lastSeen = wppSpell.lastSeen or time(),
+                            zones = wppSpell.zones or {},
+                            difficulties = wppSpell.difficulties or {},
+                            serverConfirmed = false,
+                            lastCastTime = 0,
+                            cooldownMin = wppSpell.cooldownMin or 0,
+                            cooldownMax = wppSpell.cooldownMax or 0,
+                            cooldownAvg = wppSpell.cooldownAvg or 0,
+                            cooldownSamples = wppSpell.cooldownSamples or 0,
+                        }
+                        newSpells = newSpells + 1
+                    else
+                        -- Merge: keep higher counts, better cooldown data
+                        local existing = creature.spells[spellId]
+                        if (wppSpell.castCount or 0) > (existing.castCount or 0) then
+                            existing.castCount = wppSpell.castCount
+                        end
+                        if (wppSpell.auraCount or 0) > (existing.auraCount or 0) then
+                            existing.auraCount = wppSpell.auraCount
+                        end
+                        if (wppSpell.cooldownSamples or 0) > (existing.cooldownSamples or 0) then
+                            existing.cooldownMin = wppSpell.cooldownMin or existing.cooldownMin
+                            existing.cooldownMax = wppSpell.cooldownMax or existing.cooldownMax
+                            existing.cooldownAvg = wppSpell.cooldownAvg or existing.cooldownAvg
+                            existing.cooldownSamples = wppSpell.cooldownSamples or existing.cooldownSamples
+                        end
+                        if existing.school == 0 and (wppSpell.school or 0) ~= 0 then
+                            existing.school = wppSpell.school
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Clear the import table so it doesn't re-merge next reload
+    CreatureCodexWPP = nil
+
+    return newCreatures, newSpells
+end
+
+-- ============================================================
 -- Taint protection helpers
 -- ============================================================
 
@@ -757,6 +835,13 @@ frame:SetScript("OnUpdate", OnUpdate)
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_LOGIN" then
         InitDB()
+
+        -- Auto-merge WPP sniff data if present
+        local wppC, wppS = MergeWPPData()
+        if wppC > 0 or wppS > 0 then
+            print(format("|cff00ccff[CreatureCodex]|r |cff00ff00Imported sniff data:|r +%d creatures, +%d spells from WPP.", wppC, wppS))
+        end
+
         UpdateZoneCache()
         CreatureCodex_InitMinimap()
 

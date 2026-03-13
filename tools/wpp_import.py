@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
 """
-wpp_import.py — Import WowPacketParser output into CreatureCodex SavedVariables
+wpp_import.py — Parse WowPacketParser output and generate ready-to-apply SQL
 
 Parses SMSG_SPELL_GO, SMSG_SPELL_START, and SMSG_AURA_UPDATE from WPP text
-output and generates a CreatureCodexDB.lua file that the addon can load directly.
+output and generates creature_template_spell / smart_scripts SQL directly.
 
 Usage:
-    python wpp_import.py sniff1.txt [sniff2.txt ...]
-    python wpp_import.py --merge existing/CreatureCodexDB.lua sniff1.txt
+    python wpp_import.py sniff1.txt sniff2.txt           # SQL output (default)
+    python wpp_import.py --smartai sniff1.txt             # SmartAI stubs
+    python wpp_import.py --sql --smartai sniff1.txt       # Both SQL files
+    python wpp_import.py --lua sniff1.txt                 # Addon SavedVariables
+    python wpp_import.py --merge existing.lua sniff1.txt  # Merge with addon data
 
 Output:
-    CreatureCodexDB.lua (in the current directory, or --output path)
-
-Then copy to:  WTF/Account/<ACCOUNT>/SavedVariables/CreatureCodexDB.lua
+    creature_template_spell.sql  (--sql, default)
+    smart_scripts.sql            (--smartai)
+    CreatureCodexDB.lua          (--lua)
 """
 
 import re
@@ -315,12 +318,13 @@ def merge_existing(filepath: str, creatures: dict[int, CreatureRecord]):
 # Lua output
 # ---------------------------------------------------------------------------
 
-def write_lua(creatures: dict[int, CreatureRecord], output_path: str):
-    """Write CreatureCodexDB.lua in WoW SavedVariables format."""
+def write_lua(creatures: dict[int, CreatureRecord], output_path: str,
+              var_name: str = 'CreatureCodexDB'):
+    """Write Lua SavedVariables file. var_name controls the global variable name."""
     now = int(time.time())
     lines = []
     lines.append('')
-    lines.append('CreatureCodexDB = {')
+    lines.append(f'{var_name} = {{')
     lines.append(f'\t["version"] = 3,')
     lines.append(f'\t["collector"] = "WPP Import — {datetime.now().strftime("%Y-%m-%d %H:%M")}",')
     lines.append(f'\t["lastExport"] = 0,')
@@ -379,11 +383,138 @@ def write_lua(creatures: dict[int, CreatureRecord], output_path: str):
     print(f"\nWrote {output_path}")
     print(f"  {total_creatures} creatures, {total_spells} spells")
     print(f"\nCopy to:  WTF/Account/<ACCOUNT>/SavedVariables/CreatureCodexDB.lua")
-    print(f"Then open CreatureCodex in-game to browse and export SmartAI SQL.")
+    print(f"Then log in and /reload to browse the data in-game with /cc.")
 
 
 def _lua_escape(s: str) -> str:
     return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '').replace('\r', '')
+
+
+def _sql_escape(s: str) -> str:
+    return s.replace('\\', '\\\\').replace("'", "\\'").replace('\n', '').replace('\r', '')
+
+
+# ---------------------------------------------------------------------------
+# SQL output — creature_template_spell
+# ---------------------------------------------------------------------------
+
+def write_sql(creatures: dict[int, CreatureRecord], output_path: str):
+    """Write creature_template_spell INSERT statements."""
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    lines = [
+        '-- CreatureCodex SQL Export — creature_template_spell',
+        f'-- Generated: {now_str}',
+        '-- Source: WowPacketParser import (wpp_import.py)',
+        '',
+    ]
+    creature_count = 0
+    spell_count = 0
+
+    for entry in sorted(creatures.keys()):
+        c = creatures[entry]
+        # Only export spells with observed casts (not aura-only)
+        spell_list = sorted(
+            [(sid, s) for sid, s in c.spells.items() if s.cast_count > 0],
+            key=lambda x: (-x[1].cast_count, x[0])
+        )
+        if not spell_list:
+            continue
+
+        lines.append(f'-- {c.name} (entry {entry}) — {len(spell_list)} spells')
+        lines.append(f'DELETE FROM `creature_template_spell` WHERE `CreatureID` = {entry};')
+
+        for idx, (sid, s) in enumerate(spell_list):
+            lines.append(
+                f"INSERT INTO `creature_template_spell` (`CreatureID`, `Index`, `Spell`) "
+                f"VALUES ({entry}, {idx}, {sid});"
+            )
+            spell_count += 1
+
+        lines.append('')
+        creature_count += 1
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+    print(f"\nWrote {output_path}")
+    print(f"  {creature_count} creatures, {spell_count} spells")
+    print(f"\nApply:  mysql -u root -p world < {output_path}")
+
+
+# ---------------------------------------------------------------------------
+# SQL output — smart_scripts
+# ---------------------------------------------------------------------------
+
+def write_smartai(creatures: dict[int, CreatureRecord], output_path: str):
+    """Write smart_scripts INSERT statements with estimated cooldowns."""
+    now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    lines = [
+        '-- CreatureCodex SmartAI Stubs — auto-generated from observed cast patterns',
+        f'-- Generated: {now_str}',
+        '-- Source: WowPacketParser import (wpp_import.py)',
+        '-- WARNING: These are estimates based on observed cast frequency.',
+        '-- Review and adjust cooldowns before using in production.',
+        '',
+    ]
+    creature_count = 0
+
+    for entry in sorted(creatures.keys()):
+        c = creatures[entry]
+        # Only include spells with 2+ observed casts
+        spell_list = sorted(
+            [(sid, s) for sid, s in c.spells.items() if s.cast_count >= 2],
+            key=lambda x: -x[1].cast_count
+        )
+        if not spell_list:
+            continue
+
+        lines.append(f'-- {c.name} (entry {entry})')
+        lines.append(f'DELETE FROM `smart_scripts` WHERE `entryorguid` = {entry} AND `source_type` = 0;')
+
+        for idx, (sid, s) in enumerate(spell_list):
+            # Estimate cooldown
+            if s.cooldown_min > 0:
+                cd_min = int(s.cooldown_min * 1000)
+                cd_max = int((s.cooldown_max if s.cooldown_max > 0 else s.cooldown_min * 1.5) * 1000)
+            else:
+                # Fallback: estimate from observation window
+                duration = s.last_seen - s.first_seen
+                if duration > 0 and s.cast_count > 1:
+                    avg_interval = duration / (s.cast_count - 1)
+                    cd_min = int(max(avg_interval * 0.7, 3.0) * 1000)
+                    cd_max = int(max(avg_interval * 1.3, 6.0) * 1000)
+                else:
+                    cd_min = 8000
+                    cd_max = 15000
+
+            # Infer target type: self-buff if auras dominate casts
+            target_type = 1 if s.aura_count > s.cast_count else 2
+
+            # event_type 0 = UpdateIC (in combat, repeat), action_type 11 = Cast
+            name_esc = _sql_escape(c.name)
+            lines.append(
+                f"INSERT INTO `smart_scripts` "
+                f"(`entryorguid`,`source_type`,`id`,`link`,"
+                f"`event_type`,`event_phase_mask`,`event_chance`,`event_flags`,"
+                f"`event_param1`,`event_param2`,`event_param3`,`event_param4`,"
+                f"`action_type`,`action_param1`,`action_param2`,`action_param3`,"
+                f"`target_type`,`comment`) VALUES "
+                f"({entry},0,{idx},0,"
+                f"0,0,100,0,"
+                f"{cd_min},{cd_max},{cd_min},{cd_max},"
+                f"11,{sid},0,0,"
+                f"{target_type},'{name_esc} - Spell {sid}');"
+            )
+
+        lines.append('')
+        creature_count += 1
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(lines))
+
+    print(f"\nWrote {output_path}")
+    print(f"  {creature_count} creatures with SmartAI stubs")
+    print(f"\nApply:  mysql -u root -p world < {output_path}")
 
 
 # ---------------------------------------------------------------------------
@@ -392,21 +523,41 @@ def _lua_escape(s: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Import WowPacketParser output into CreatureCodex SavedVariables',
-        epilog='Example: python wpp_import.py sniff1.txt sniff2.txt -o CreatureCodexDB.lua'
+        description='Parse WowPacketParser output into ready-to-apply SQL or addon data',
+        epilog='Example: python wpp_import.py sniff1.txt sniff2.txt'
     )
     parser.add_argument('files', nargs='+', help='WPP .txt output files to parse')
-    parser.add_argument('-o', '--output', default='CreatureCodexDB.lua',
-                        help='Output path (default: CreatureCodexDB.lua)')
+    parser.add_argument('-o', '--output', default=None,
+                        help='Output path (default: auto-named per format)')
     parser.add_argument('-m', '--merge', metavar='LUA_FILE',
                         help='Merge with an existing CreatureCodexDB.lua before writing')
+
+    fmt = parser.add_argument_group('output format (default: --sql)')
+    fmt.add_argument('--sql', action='store_true',
+                     help='Output creature_template_spell SQL (default if no format specified)')
+    fmt.add_argument('--smartai', action='store_true',
+                     help='Output smart_scripts SQL with estimated cooldowns')
+    fmt.add_argument('--lua', action='store_true',
+                     help='Output CreatureCodexDB.lua SavedVariables (replaces addon DB)')
+    fmt.add_argument('--addon', action='store_true',
+                     help='Output CreatureCodexWPP.lua for live addon import (/reload to merge)')
     args = parser.parse_args()
+
+    # Default to --sql if no format specified
+    if not args.sql and not args.smartai and not args.lua and not args.addon:
+        args.sql = True
 
     # Validate input files
     for fp in args.files:
         if not os.path.exists(fp):
             print(f"Error: File not found: {fp}", file=sys.stderr)
             sys.exit(1)
+
+    # Can only use --output with a single format
+    formats_selected = sum([args.sql, args.smartai, args.lua, args.addon])
+    if args.output and formats_selected > 1:
+        print("Error: --output can only be used with a single format flag.", file=sys.stderr)
+        sys.exit(1)
 
     # Parse
     creatures = parse_wpp_files(args.files)
@@ -415,8 +566,24 @@ def main():
     if args.merge:
         merge_existing(args.merge, creatures)
 
-    # Write
-    write_lua(creatures, args.output)
+    # Write requested formats
+    if args.sql:
+        path = args.output or 'creature_template_spell.sql'
+        write_sql(creatures, path)
+
+    if args.smartai:
+        path = args.output or 'smart_scripts.sql'
+        write_smartai(creatures, path)
+
+    if args.lua:
+        path = args.output or 'CreatureCodexDB.lua'
+        write_lua(creatures, path)
+
+    if args.addon:
+        path = args.output or 'CreatureCodexWPP.lua'
+        write_lua(creatures, path, var_name='CreatureCodexWPP')
+        print(f"\nCopy to:  WTF/Account/<ACCOUNT>/SavedVariables/CreatureCodexWPP.lua")
+        print(f"Then /reload in-game — the addon auto-merges and reports what it imported.")
 
 
 if __name__ == '__main__':
