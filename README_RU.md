@@ -7,6 +7,10 @@
 
 **Репозиторий:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
+![Браузер — список существ, детали заклинаний, тултип с ID заклинания/статусом/зонами](screenshots/browser.jpg)
+
+![Режим отладки — вывод визуального сканера с entry существ, названиями заклинаний, школами](screenshots/debug.jpg)
+
 ## Что он делает
 
 1. **Установите аддон** на любой сервер TrinityCore — включая репаки, без патчей сервера
@@ -118,22 +122,22 @@ virtual void OnAuraApply(Unit* /*target*/, AuraApplication* /*aurApp*/) {}
 ```cpp
 void ScriptMgr::OnCreatureSpellCast(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureSpellCast(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureSpellCast(creature, spell);
 }
 
 void ScriptMgr::OnCreatureSpellStart(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureSpellStart(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureSpellStart(creature, spell);
 }
 
 void ScriptMgr::OnCreatureChannelFinished(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureChannelFinished(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureChannelFinished(creature, spell);
 }
 
 void ScriptMgr::OnAuraApply(Unit* target, AuraApplication* aurApp)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnAuraApply(target, aurApp); });
+    FOREACH_SCRIPT(UnitScript)->OnAuraApply(target, aurApp);
 }
 ```
 

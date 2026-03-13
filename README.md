@@ -122,22 +122,22 @@ virtual void OnAuraApply(Unit* /*target*/, AuraApplication* /*aurApp*/) {}
 ```cpp
 void ScriptMgr::OnCreatureSpellCast(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureSpellCast(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureSpellCast(creature, spell);
 }
 
 void ScriptMgr::OnCreatureSpellStart(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureSpellStart(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureSpellStart(creature, spell);
 }
 
 void ScriptMgr::OnCreatureChannelFinished(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureChannelFinished(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureChannelFinished(creature, spell);
 }
 
 void ScriptMgr::OnAuraApply(Unit* target, AuraApplication* aurApp)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnAuraApply(target, aurApp); });
+    FOREACH_SCRIPT(UnitScript)->OnAuraApply(target, aurApp);
 }
 ```
 

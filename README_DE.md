@@ -7,6 +7,10 @@ Ihre NPCs kämpfen nicht. Sie stehen da und auto-attacken, weil `creature_templa
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
+![Browser — Kreaturliste, Zauberdetails, Tooltip mit Zauber-ID/Status/Zonen](screenshots/browser.jpg)
+
+![Debug-Modus — Live-Ausgabe des visuellen Scanners mit Kreatur-Entries, Zaubernamen, Schulen](screenshots/debug.jpg)
+
 ## Was es macht
 
 1. **Addon installieren** auf jedem TrinityCore-Server — Repacks eingeschlossen, keine Server-Patches nötig
@@ -118,22 +122,22 @@ virtual void OnAuraApply(Unit* /*target*/, AuraApplication* /*aurApp*/) {}
 ```cpp
 void ScriptMgr::OnCreatureSpellCast(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureSpellCast(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureSpellCast(creature, spell);
 }
 
 void ScriptMgr::OnCreatureSpellStart(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureSpellStart(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureSpellStart(creature, spell);
 }
 
 void ScriptMgr::OnCreatureChannelFinished(Creature* creature, SpellInfo const* spell)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnCreatureChannelFinished(creature, spell); });
+    FOREACH_SCRIPT(UnitScript)->OnCreatureChannelFinished(creature, spell);
 }
 
 void ScriptMgr::OnAuraApply(Unit* target, AuraApplication* aurApp)
 {
-    FOREACH_SCRIPT(UnitScript, [&](UnitScript* script) { script->OnAuraApply(target, aurApp); });
+    FOREACH_SCRIPT(UnitScript)->OnAuraApply(target, aurApp);
 }
 ```
 
