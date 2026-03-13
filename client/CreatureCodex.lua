@@ -515,11 +515,10 @@ end
 
 function CreatureCodex_RequestZoneCreatures(mapId)
     if not mapId then
-        mapId = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player")
-        if not mapId then return end
-        -- Convert uiMapID to instance map ID
-        local info = C_Map.GetMapInfo(mapId)
-        if not info then return end
+        -- GetInstanceInfo() returns the actual instance map ID the server uses
+        local instanceMapId = select(8, GetInstanceInfo())
+        if not instanceMapId or instanceMapId < 0 then return end
+        mapId = instanceMapId
     end
     zoneCreatureData[mapId] = {}
     C_ChatInfo.SendAddonMessage(CCDX_PREFIX, "ZC|" .. mapId, "WHISPER", UnitName("player"))
