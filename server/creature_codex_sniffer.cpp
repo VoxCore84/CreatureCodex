@@ -160,7 +160,7 @@ public:
         BroadcastToNearbyPlayers(creature, spell, "SC");
     }
 
-    // Fires at the start of casting (beginning of Spell::cast)
+    // Fires at the start of casting (beginning of Spell::prepare)
     void OnCreatureSpellStart(Creature* creature, SpellInfo const* spell) override
     {
         BroadcastToNearbyPlayers(creature, spell, "SS");

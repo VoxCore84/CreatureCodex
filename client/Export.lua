@@ -54,6 +54,9 @@ end
 local function GenerateSQL()
     local lines = {
         "-- CreatureCodex SQL Export — creature_template_spell",
+        "-- Format: TrinityCore standard (DELETE+INSERT, backtick columns)",
+        "-- WARNING: DELETE statements below will remove ALL existing spells for each creature.",
+        "-- Use the 'New Only' export tab if you want to add spells without removing existing ones.",
         "-- Generated: " .. date("%Y-%m-%d %H:%M:%S"),
         "-- Collector: " .. (CreatureCodexDB.collector or "unknown"),
         "",
@@ -164,7 +167,7 @@ local function GenerateSmartAI()
                 -- action_type 11 = Cast
                 local hpMin = ""
                 if s.data.hpMin and s.data.hpMin < 40 then
-                    -- Spell only seen at low HP — use HP% event instead
+                    -- Spell seen below 40% HP at least once — use HP% event instead
                     lines[#lines + 1] = string.format(
                         "INSERT INTO `smart_scripts` (`entryorguid`,`source_type`,`id`,`link`,`event_type`,`event_phase_mask`,`event_chance`,`event_flags`,`event_param1`,`event_param2`,`event_param3`,`event_param4`,`action_type`,`action_param1`,`action_param2`,`action_param3`,`target_type`,`comment`) VALUES "
                         .. "(%d,0,%d,0,2,0,100,0,%d,%d,0,0,11,%d,0,0,%d,'%s - %s (HP phase)');",

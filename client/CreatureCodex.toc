@@ -2,7 +2,7 @@
 ## Title: |cff00ccffCreatureCodex|r
 ## Notes: Server-assisted creature spell/aura sniffer for emulator database generation.
 ## Author: VoxCore
-## Version: 3.0.0
+## Version: 1.0.0
 ## Category: Development Tools
 ## DefaultState: enabled
 ## X-License: MIT

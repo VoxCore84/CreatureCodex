@@ -1,4 +1,5 @@
 local VERSION = 4
+local ADDON_VERSION = "1.0.0"
 
 local CCDX_PREFIX = "CCDX"
 
@@ -86,6 +87,7 @@ local function InitDB()
             spellBlacklist = {},
             creatureBlacklist = {},
             ignored = {},
+            ignoredSpells = {},
             players = {},
             exports = {},
             spellMetadata = {},
@@ -112,6 +114,7 @@ local function InitDB()
         if not CreatureCodexDB.exports then CreatureCodexDB.exports = {} end
         if not CreatureCodexDB.spellMetadata then CreatureCodexDB.spellMetadata = {} end
         if not CreatureCodexDB.settings then CreatureCodexDB.settings = { trackPlayers = false } end
+        if not CreatureCodexDB.ignoredSpells then CreatureCodexDB.ignoredSpells = {} end
         if not CreatureCodexDB.dataRevision then CreatureCodexDB.dataRevision = 0 end
     end
 
@@ -636,9 +639,12 @@ end
 
 -- Request spell list from server for a given creature entry
 local lastTargetEntry = nil
+local lastTargetTime = 0
 local function RequestSpellList(entry)
-    if not entry or entry == lastTargetEntry then return end
+    local now = GetTime()
+    if not entry or (entry == lastTargetEntry and now - lastTargetTime < 5) then return end
     lastTargetEntry = entry
+    lastTargetTime = now
     C_ChatInfo.SendAddonMessage(CCDX_PREFIX, "SL|" .. entry, "WHISPER", UnitName("player"))
     C_ChatInfo.SendAddonMessage(CCDX_PREFIX, "CI|" .. entry, "WHISPER", UnitName("player"))
 end
@@ -823,15 +829,35 @@ function CreatureCodex_GetServerStats() return sessionServerCasts, serverSniffer
 function CreatureCodex_ToggleDebug() debugMode = not debugMode end
 function CreatureCodex_IsDebug() return debugMode end
 
-function CreatureCodex_IgnoreSpell(spellId)
+function CreatureCodex_IgnoreSpell(spellId, spellName)
     SPELL_BLACKLIST[spellId] = true
     if CreatureCodexDB then
         CreatureCodexDB.spellBlacklist[spellId] = true
+        if not CreatureCodexDB.ignoredSpells then CreatureCodexDB.ignoredSpells = {} end
+        CreatureCodexDB.ignoredSpells[spellId] = { name = spellName or ("Spell " .. spellId), ignoredAt = time() }
     end
 end
 
-function CreatureCodex_GetIgnoredList()
+function CreatureCodex_UnignoreSpell(spellId)
+    if not CreatureCodexDB then return end
+    SPELL_BLACKLIST[spellId] = nil
+    CreatureCodexDB.spellBlacklist[spellId] = nil
+    if CreatureCodexDB.ignoredSpells then
+        CreatureCodexDB.ignoredSpells[spellId] = nil
+    end
+end
+
+function CreatureCodex_GetIgnoredCreatures()
     return CreatureCodexDB and CreatureCodexDB.ignored or {}
+end
+
+function CreatureCodex_GetIgnoredSpells()
+    return CreatureCodexDB and CreatureCodexDB.ignoredSpells or {}
+end
+
+-- Legacy alias
+function CreatureCodex_GetIgnoredList()
+    return CreatureCodex_GetIgnoredCreatures()
 end
 
 function CreatureCodex_UnignoreCreature(entry)
@@ -946,7 +972,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
         frame:RegisterEvent("PLAYER_TARGET_CHANGED")
 
         local totalC, totalS = CountDB()
-        print("|cff00ccff[CreatureCodex]|r v" .. VERSION .. " loaded. " .. totalC .. " creatures, " .. totalS .. " spells tracked.")
+        print("|cff00ccff[CreatureCodex]|r v" .. ADDON_VERSION .. " loaded. " .. totalC .. " creatures, " .. totalS .. " spells tracked.")
         print("|cff00ccff[CreatureCodex]|r  Visual scraper: 10Hz casts + 5Hz aura round-robin.")
         print("|cff00ccff[CreatureCodex]|r  Server sniffer: listening on CCDX channel...")
 
@@ -1006,7 +1032,7 @@ frame:RegisterEvent("PLAYER_LOGIN")
 SLASH_CREATURECODEX1 = "/codex"
 SLASH_CREATURECODEX2 = "/cc"
 SlashCmdList["CREATURECODEX"] = function(msg)
-    msg = (msg or ""):lower():trim()
+    msg = strtrim((msg or ""):lower())
 
     if msg == "" or msg == "browser" or msg == "ui" then
         CreatureCodex_ToggleUI()
@@ -1019,8 +1045,9 @@ SlashCmdList["CREATURECODEX"] = function(msg)
         StaticPopup_Show("CREATURECODEX_RESET")
     elseif msg == "zone" then
         CreatureCodex_RequestZoneCreatures()
-        print("|cff00ccff[CreatureCodex]|r Requesting zone creatures from server...")
+        print("|cff00ccff[CreatureCodex]|r Requesting zone data from server... (requires Eluna server script)")
     elseif msg == "submit" or msg == "aggregate" then
+        print("|cff00ccff[CreatureCodex]|r Submitting aggregation data... (requires Eluna server script)")
         CreatureCodex_SubmitAggregation()
     elseif msg == "stats" then
         local totalC, totalS = CreatureCodex_CountDB()
@@ -1031,7 +1058,8 @@ SlashCmdList["CREATURECODEX"] = function(msg)
         print(format("  Session: +%d creatures, +%d spells, +%d auras", sc, ss, sa))
         print(format("  Server sniffer: %s (%d casts received)", srvActive and "ACTIVE" or "inactive", srvCasts))
     elseif msg == "sync" then
-        print("|cff00ccff[CreatureCodex]|r Reloading UI to import sniff data...")
+        print("|cff00ccff[CreatureCodex]|r Reloading to import WPP sniff data...")
+        print("|cff00ccff[CreatureCodex]|r  (WPP data auto-merges on login. Use /cc sync only after running wpp_import.py --addon)")
         ReloadUI()
     else
         print("|cff00ccff[CreatureCodex]|r Commands:")
@@ -1039,9 +1067,9 @@ SlashCmdList["CREATURECODEX"] = function(msg)
         print("  /cc export — Export window")
         print("  /cc debug — Toggle debug output")
         print("  /cc stats — Show statistics")
-        print("  /cc sync — Reload UI to import sniff data")
-        print("  /cc zone — Query zone creatures from server")
-        print("  /cc submit — Submit data to server aggregation")
+        print("  /cc sync — Reload UI to import WPP sniff data (run wpp_import.py --addon first)")
+        print("  /cc zone — Query zone creatures from server (requires Eluna)")
+        print("  /cc submit — Submit data to server aggregation (requires Eluna)")
         print("  /cc reset — Reset all data")
     end
 end

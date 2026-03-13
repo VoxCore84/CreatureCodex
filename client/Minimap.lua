@@ -23,9 +23,11 @@ local plugin = ldb:NewDataObject("CreatureCodex", {
         local totalC, totalS = CreatureCodex_CountDB()
         tt:AddLine(totalC .. " creatures, " .. totalS .. " spells tracked", 1, 1, 1)
 
-        local sc, ss = CreatureCodex_GetSessionStats()
+        local sc, ss, sa = CreatureCodex_GetSessionStats()
         if sc > 0 or ss > 0 then
-            tt:AddLine("Session: +" .. sc .. " creatures, +" .. ss .. " spells", 0.5, 1, 0.5)
+            local text = "Session: +" .. sc .. " creatures, +" .. ss .. " spells"
+            if sa and sa > 0 then text = text .. ", +" .. sa .. " auras" end
+            tt:AddLine(text, 0.5, 1, 0.5)
         end
 
         tt:AddLine(" ")

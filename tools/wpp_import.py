@@ -325,7 +325,7 @@ def write_lua(creatures: dict[int, CreatureRecord], output_path: str,
     lines = []
     lines.append('')
     lines.append(f'{var_name} = {{')
-    lines.append(f'\t["version"] = 3,')
+    lines.append(f'\t["version"] = 4,')
     lines.append(f'\t["collector"] = "WPP Import — {datetime.now().strftime("%Y-%m-%d %H:%M")}",')
     lines.append(f'\t["lastExport"] = 0,')
     lines.append(f'\t["creatures"] = {{')

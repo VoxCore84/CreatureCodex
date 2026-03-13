@@ -1,20 +1,16 @@
-# CreatureCodex
+# CreatureCodex v1.0.0
 
-[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
+[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=v1.0.0)](https://github.com/VoxCore84/CreatureCodex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Ihre NPCs kämpfen nicht. Sie stehen da und auto-attacken, weil `creature_template_spell` (die Datenbanktabelle, die Kreaturen Zauber zuweist) leer ist und kein SmartAI (TrinityCore's skriptgesteuertes Verhaltenssystem) ihnen sagt, was sie zaubern sollen. CreatureCodex behebt das.
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
-![Browser — Kreaturliste, Zauberdetails, Tooltip mit Zauber-ID/Status/Zonen](screenshots/browser.jpg)
-
-![Debug-Modus — Live-Ausgabe des visuellen Scanners mit Kreatur-Entries, Zaubernamen, Schulen](screenshots/debug.jpg)
-
 ## Was es macht
 
 1. **Addon installieren** auf jedem TrinityCore-Server — Repacks eingeschlossen, keine Server-Patches nötig
-2. **In der Nähe von Kreaturen herumlaufen** — das Addon erfasst jeden Zauber, jede Kanalisierung und Aura in Echtzeit
+2. **In der Nähe von Kreaturen herumlaufen** — das Addon erfasst sichtbare Zauber, Kanalisierungen und Auren in Echtzeit (Server-Hooks ergänzen Sofortzauber/versteckte Zauber für 100% Abdeckung)
 3. **Export-Panel öffnen**, Tab **SmartAI** wählen — fertiges SQL mit geschätzten Cooldowns, HP-Phasen-Triggern und Zieltypen
 4. **SQL anwenden** — Ihre NPCs zaubern jetzt mit richtigem Timing und Verhalten
 
@@ -34,7 +30,7 @@ An Mobs herangehen ───────┼─ Server-Hooks (C++ UnitScript, 100
                                                         └── new-only (nur die Lücken)
 ```
 
-Der SmartAI-Export ist nicht nur eine Liste von Zauber-IDs — er nutzt die Timing-Intelligenz des Addons zur Cooldown-Schätzung aus beobachteten Cast-Intervallen, erkennt HP-Phasen-Fähigkeiten (Zauber die nur unter 40% HP gesehen werden, erhalten `event_type=2` statt zeitbasierter Wiederholungen), und leitet Zieltypen aus dem Cast-zu-Aura-Verhältnis ab. Ein erster Entwurf zum Feintunen, kein leeres Blatt.
+Der SmartAI-Export ist nicht nur eine Liste von Zauber-IDs — er nutzt die Timing-Intelligenz des Addons zur Cooldown-Schätzung aus beobachteten Cast-Intervallen, erkennt HP-Phasen-Fähigkeiten (Zauber die mindestens einmal unter 40% HP gesehen wurden, erhalten `event_type=2` statt zeitbasierter Wiederholungen), und leitet Zieltypen aus dem Cast-zu-Aura-Verhältnis ab. Ein erster Entwurf zum Feintunen, kein leeres Blatt.
 
 ## Warum das ohne dieses Tool schwer ist
 
@@ -61,7 +57,7 @@ CreatureCodex hat drei Datenquellen:
 1. **Client-seitiger visueller Scanner** (funktioniert überall, keine Server-Patches nötig)
    - Fragt `UnitCastingInfo`/`UnitChannelInfo` mit 10 Hz ab
    - Scannt Nameplates im Round-Robin-Verfahren mit 5 Hz nach Auren
-   - Zeichnet Zaubername, Schule, Kreatur-Entry, HP% und Zeitstempel auf
+   - Zeichnet Zaubername, Schule, Kreatur-Entry und Zeitstempel auf (HP% nur über Server-Hooks verfügbar)
 
 2. **Server-seitiger Sniffer** (erfordert TrinityCore C++-Hooks)
    - Vier `UnitScript`-Hooks übertragen jedes Kreatur-Zauber-Event als Addon-Nachricht
@@ -79,7 +75,7 @@ Bei gemeinsamer Nutzung mehrerer Quellen dedupliziert das Addon automatisch — 
 
 ## Download
 
-Laden Sie die neueste Version von der [Releases-Seite](https://github.com/VoxCore84/CreatureCodex/releases) herunter. Laden Sie `CreatureCodex.zip` herunter und entpacken Sie es — es enthält alles: das Client-Addon, Server-Skripte, SQL-Dateien, Tools und diese Dokumentation.
+Laden Sie die neueste Version von der [Releases-Seite](https://github.com/VoxCore84/CreatureCodex/releases) herunter. Laden Sie `CreatureCodex.zip` herunter und entpacken Sie es — es enthält alles: das Client-Addon, Server-Skripte, Tools und diese Dokumentation.
 
 ## Installation
 
@@ -88,7 +84,7 @@ Laden Sie die neueste Version von der [Releases-Seite](https://github.com/VoxCor
 
 Wenn Sie nur den visuellen Scanner ohne Server-Modifikation möchten:
 
-1. Kopieren Sie den Inhalt des `client/`-Ordners in den Addon-Ordner Ihrer WoW-Installation:
+1. Kopieren Sie den `CreatureCodex/`-Ordner (mit den .lua-Dateien) in den Addon-Ordner Ihrer WoW-Installation:
    ```
    <WoW-Verzeichnis>/Interface/AddOns/CreatureCodex/
    ```
@@ -160,30 +156,9 @@ void OnAuraApply(Unit* target, AuraApplication* aurApp);
 
 ### Schritt 2: Hooks in Spell.cpp und Unit.cpp einbinden
 
-Fügen Sie diese einzeiligen Hooks an vier Stellen ein. Suchen Sie jeweils nach dem Funktionsnamen.
+Vier einzeilige Hooks werden innerhalb bestehender `if (Creature* caster = ...)`-Blöcke in `Spell.cpp` und am Ende von `Unit::_ApplyAura()` in `Unit.cpp` eingefügt.
 
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendSpellGo()`, am Ende der Funktion einfügen (vor der schließenden `}`):
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureSpellCast(creature, m_spellInfo);
-```
-
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::cast()`, am Anfang nach den `m_spellInfo`-Prüfungen einfügen:
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureSpellStart(creature, m_spellInfo);
-```
-
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendChannelUpdate()`, suchen Sie `if (time == 0)` und fügen Sie innerhalb dieses Blocks ein:
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureChannelFinished(creature, m_spellInfo);
-```
-
-**`src/server/game/Entities/Unit/Unit.cpp`** — In `Unit::_ApplyAura()`, am Ende der Funktion einfügen (vor der schließenden `}`):
-```cpp
-sScriptMgr->OnAuraApply(this, aurApp);
-```
+Den genauen Code, Variablennamen und Einfügepunkte finden Sie in **`server/HOOKS.md`**. Der Auto-Patcher (`install_hooks.py`) wendet diese automatisch an — verwenden Sie `HOOKS.md` nur, wenn Sie manuell patchen möchten.
 
 ### Schritt 3: IsAddonRegistered-Hilfsmethode hinzufügen
 
@@ -212,14 +187,16 @@ bool WorldSession::IsAddonRegistered(std::string_view prefix) const
 RBAC_PERM_COMMAND_CREATURE_CODEX = 3012,
 ```
 
-Dann SQL anwenden:
-```
-mysql -u root -p auth < sql/auth_rbac_creature_codex.sql
+Dann `sql/auth_rbac_creature_codex.sql` auf die `auth`-Datenbank anwenden, oder manuell:
+```sql
+INSERT IGNORE INTO `rbac_permissions` (`id`, `name`) VALUES (3012, 'Command: codex');
+-- An GM-Rolle koppeln (Rolle 193 = GM-Befehle)
+INSERT IGNORE INTO `rbac_linked_permissions` (`id`, `linkedId`) VALUES (193, 3012);
 ```
 
 ### Schritt 5: Sniffer-Skripte kopieren
 
-1. Kopieren Sie `server/Custom/creature_codex_sniffer.cpp` und `server/Custom/cs_creature_codex.cpp` nach `src/server/scripts/Custom/`.
+1. Kopieren Sie `server/creature_codex_sniffer.cpp` und `server/cs_creature_codex.cpp` nach `src/server/scripts/Custom/`.
 
 2. Registrieren Sie sie in `custom_script_loader.cpp`:
    ```cpp
@@ -242,16 +219,23 @@ Bei Verwendung von Eluna kopieren Sie `server/lua_scripts/creature_codex_server.
 - **Zonen-Vollständigkeit**: Alle Kreaturen einer Karte mit bekannten Zauberzahlen abfragen
 - **Mehrspieler-Aggregation**: Spieler können Entdeckungen an eine gemeinsame Server-Tabelle senden
 
-Für die Aggregation SQL auf die gewünschte Datenbank anwenden (Standard: `characters`):
-```
-mysql -u root -p characters < sql/codex_aggregated.sql
+Für die Aggregation die Tabelle in der gewünschten Datenbank erstellen (Standard: `characters`):
+```sql
+CREATE TABLE IF NOT EXISTS `codex_aggregated` (
+    `creature_entry` INT UNSIGNED NOT NULL,
+    `spell_id` INT UNSIGNED NOT NULL,
+    `cast_count` INT UNSIGNED NOT NULL DEFAULT 1,
+    `last_reporter` VARCHAR(64) NOT NULL DEFAULT '',
+    `last_seen` INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (`creature_entry`, `spell_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-Bei Verwendung einer anderen Datenbank auch `AGGREGATION_DB` am Anfang von `creature_codex_server.lua` anpassen.
+Diese Tabelle muss in Ihrer `characters`-Datenbank existieren (dieselbe, die `CharDBExecute` verwendet).
 
 ### Schritt 7: Kompilieren und installieren
 
-1. Kopieren Sie den `client/`-Inhalt nach `Interface\AddOns\CreatureCodex\`.
+1. Kopieren Sie den `CreatureCodex/`-Ordner nach `Interface\AddOns\CreatureCodex\`.
 2. Kompilieren Sie Ihren Server neu. Aus Ihrem Build-Verzeichnis:
    ```bash
    # CMake + Make (Linux)
@@ -347,6 +331,7 @@ Mit `-o` den Ausgabedateinamen überschreiben (nur bei einzelnem Format). Flags 
 | `/cc stats` | Erfassungsstatistiken ausgeben |
 | `/cc zone` | Zonen-Kreaturdaten vom Server abfragen (erfordert Eluna) |
 | `/cc submit` | Aggregierte Daten an Server senden (erfordert Eluna) |
+| `/cc sync` | UI neu laden um WPP-Sniff-Daten zu importieren (zuerst `wpp_import.py --addon` ausführen) |
 | `/cc reset` | Alle gespeicherten Daten löschen (mit Bestätigung) |
 
 ### GM-Befehle (erfordert RBAC 3012)
@@ -363,7 +348,7 @@ Mit `-o` den Ausgabedateinamen überschreiben (nur bei einzelnem Format). Flags 
 
 Das Export-Panel bietet vier Tabs:
 
-1. **Raw** — Klartext: `KreaturName (entry) - ZauberName [spellId] x Anzahl`
+1. **Raw** — Maschinenlesbares Format: `entry:name|spellId:total:school:spellName|...` (eine Kreatur pro Zeile, mit `CCEXPORT:v3` Präfix)
 2. **SQL** — Fertige `INSERT INTO creature_template_spell`-Anweisungen
 3. **SmartAI** — `INSERT INTO smart_scripts` für AI-gesteuerte Zauber
 4. **New Only** — Wie SQL, aber nur Zauber die noch nicht in `creature_template_spell` sind
@@ -400,33 +385,49 @@ Addon und Server kommunizieren über den `CCDX`-Addon-Message-Prefix mit Pipe-ge
 | C->S | `CI` | `CI\|entry` | Kreatur-Info anfordern |
 | C->S | `ZC` | `ZC\|mapId` | Zonen-Kreaturen anfordern |
 | C->S | `AG` | `AG\|entry\|spellId:count,...` | Aggregierte Daten senden |
+| S->C | `AR` | `AR\|entry\|OK` | Aggregations-Bestätigung |
 
 ## Dateistruktur
 
 ```
 CreatureCodex/
-  client/                          -- Client-Addon
+  CreatureCodex/                          -- ADDON-ORDNER (nach Interface/AddOns/CreatureCodex/ kopieren)
     CreatureCodex.toc
-    CreatureCodex.lua              -- Kern-Engine (Erfassung + DB)
-    Export.lua                     -- 4-Tab-Export
-    UI.lua                        -- Browser-Panel
-    Minimap.lua                   -- Minimap-Button
-    Libs/                         -- LibStub, CallbackHandler, LibDataBroker, LibDBIcon
+    CreatureCodex.lua                     -- Kern-Engine (Erfassung + DB)
+    Export.lua                            -- 4-Tab-Export
+    UI.lua                                -- Browser-Panel
+    Minimap.lua                           -- Minimap-Button
+    Libs/                                 -- LibStub, CallbackHandler, LibDataBroker, LibDBIcon
   server/
-    Custom/
-      creature_codex_sniffer.cpp  -- C++ UnitScript-Hooks
-      cs_creature_codex.cpp       -- .codex GM-Befehlsbaum
+    creature_codex_sniffer.cpp            -- C++ UnitScript-Hooks (Broadcast-Schicht)
+    cs_creature_codex.cpp                 -- .codex GM-Befehlsbaum
+    install_hooks.py                      -- Auto-Patcher für TC-Source-Hooks
+    HOOKS.md                              -- Manuelle Patching-Referenz
     lua_scripts/
-      creature_codex_server.lua   -- Eluna-Handler
-  sql/
-    auth_rbac_creature_codex.sql  -- RBAC-Berechtigung für .codex
-    codex_aggregated.sql          -- Mehrspieler-Aggregationstabelle
+      creature_codex_server.lua           -- Eluna-Handler
   tools/
-    wpp_import.py                 -- WowPacketParser → SQL / Addon-Import-Tool
-  screenshots/                    -- README-Screenshots
-  README.md                       -- Englische Version
-  README_RU.md                    -- Russische Version
-  README_DE.md                    -- Diese Datei
+    wpp_import.py                         -- WPP → SQL / Addon-Import-Tool
+    wpp_watcher.py                        -- Hintergrund-Companion für Auto-Import
+    _README.txt                           -- Übersicht Tools-Ordner
+    parsed/
+      _What_To_Do_With_These_Files.txt    -- Anleitung für geparste Dateien
+  _GUIDE/
+    01_Quick_Start.md                     -- In 2 Minuten loslegen
+    02_Server_Setup.md                    -- Server-Hooks + C++-Setup
+    03_Retail_Sniffing.md                 -- Ymir + WPP Pipeline
+    04_Understanding_Exports.md           -- Export-Formate erklärt
+  session.py                              -- Session-Manager (Ymir + SV-Backup)
+  update_tools.py                         -- Tool-Downloader (erfordert gh CLI)
+  Start Ymir.bat                          -- Ymir + Session-Manager starten (Windows)
+  Update Tools.bat                        -- WPP und Ymir herunterladen/aktualisieren (Windows)
+  Parse Captures.bat                      -- WPP auf vorhandene .pkt-Dateien ausführen (Windows)
+  start_ymir.sh                           -- Ymir + Session-Manager starten (Linux/macOS)
+  update_tools.sh                         -- WPP und Ymir herunterladen/aktualisieren (Linux/macOS)
+  parse_captures.sh                       -- WPP auf vorhandene .pkt-Dateien ausführen (Linux/macOS)
+  README.md                               -- Englische Version
+  README_RU.md                            -- Russische Version
+  README_DE.md                            -- Diese Datei
+  LICENSE                                 -- MIT
 ```
 
 ## Lizenz

@@ -1,6 +1,9 @@
 # WoW SavedVariables (contain player data)
 CreatureCodexDB.lua
 
+# Session config (user-specific WoW path)
+session_config.json
+
 # OS files
 .DS_Store
 Thumbs.db

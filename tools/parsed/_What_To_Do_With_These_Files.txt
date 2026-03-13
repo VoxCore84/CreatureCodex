@@ -1,0 +1,16 @@
+What Are These Files?
+=====================
+
+These are parsed packet captures from your WoW sessions.
+WowPacketParser converted your Ymir .pkt captures into readable text and SQL.
+
+  .txt files  — Human-readable packet data (every network message decoded)
+  .sql files  — Database queries extracted from the packets
+
+For CreatureCodex specifically:
+  - The addon already captured creature spells while you were playing
+  - Open the addon in-game (/cc) and click Export Data for ready-to-use SQL
+  - These WPP files are the raw source data if you want to dig deeper
+
+To generate creature_template_spell SQL, use the addon's in-game export
+(/cc export) or run tools/wpp_import.py --sql on your WPP output.

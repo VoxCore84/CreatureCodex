@@ -1,20 +1,16 @@
-# CreatureCodex
+# CreatureCodex v1.0.0
 
-[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
+[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=v1.0.0)](https://github.com/VoxCore84/CreatureCodex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Your NPCs don't fight. They stand there and auto-attack because `creature_template_spell` (the database table that assigns spells to creatures) is empty and there's no SmartAI (TrinityCore's scripted behavior system) telling them what to cast. CreatureCodex fixes that.
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
-![Browser — creature list, spell details, tooltip with spell ID/status/zones](screenshots/browser.jpg)
-
-![Debug mode — live visual scraper output with creature entries, spell names, schools](screenshots/debug.jpg)
-
 ## What It Does
 
 1. **Install the addon** on any TrinityCore server — repacks included, no server patches needed
-2. **Walk around and let creatures fight** — the addon captures every spell cast, channel, and aura in real time
+2. **Walk around and let creatures fight** — the addon captures visible spell casts, channels, and auras in real time (server hooks add instant/hidden spells for 100% coverage)
 3. **Open the export panel** and hit the **SmartAI** tab — ready-to-apply SQL with estimated cooldowns, HP phase triggers, and target types
 4. **Apply the SQL** — your NPCs now cast spells with proper timing and behavior
 
@@ -23,18 +19,18 @@ CreatureCodex turns observation into working SmartAI. You watch mobs fight, it w
 ### The Full Pipeline
 
 ```
-                            ┌─ Visual Scraper (client addon, works everywhere)
-Walk near mobs ─────────────┼─ Server Hooks (C++ UnitScript, 100% coverage)
-                            └─ Ymir Integration (auto-merge from packet captures)
-                                          │
-                                          ▼
-                              Browse in-game → Export as SQL
-                                                ├── creature_template_spell (spell lists)
-                                                ├── smart_scripts (AI with cooldowns)
-                                                └── new-only (just the gaps)
+                            +-- Visual Scraper (client addon, works everywhere)
+Walk near mobs -------------+-- Server Hooks (C++ UnitScript, 100% coverage)
+                            +-- Ymir Integration (auto-merge from packet captures)
+                                          |
+                                          v
+                              Browse in-game -> Export as SQL
+                                                +-- creature_template_spell (spell lists)
+                                                +-- smart_scripts (AI with cooldowns)
+                                                +-- new-only (just the gaps)
 ```
 
-The SmartAI export isn't just a list of spell IDs — it uses the addon's timing intelligence to estimate cooldowns from observed cast intervals, detects HP-phase abilities (spells only seen below 40% HP get `event_type=2` health triggers instead of timed repeats), and infers target types from cast-vs-aura ratios. It's a first draft you can tune, not a blank slate you have to build from scratch.
+The SmartAI export isn't just a list of spell IDs — it uses the addon's timing intelligence to estimate cooldowns from observed cast intervals, detects HP-phase abilities (spells seen below 40% HP at least once get `event_type=2` health triggers instead of timed repeats), and infers target types from cast-vs-aura ratios. It's a first draft you can tune, not a blank slate you have to build from scratch.
 
 ## Why This Is Hard Without It
 
@@ -46,7 +42,7 @@ This data doesn't ship in DB2 files. It has to be observed from a live server. I
 
 - **Instant casts are invisible.** `UnitCastingInfo`/`UnitChannelInfo` only see spells with visible cast bars. Instant casts, triggered spells, and many boss mechanics never appear in these APIs — a significant portion of any creature's spell list is unobservable from the client.
 
-- **Traditional sniffing requires post-processing.** The Ymir → WowPacketParser pipeline produces the best data, but turning raw packet captures into usable spell lists has always meant offline parsing, manual review, and hand-written SQL.
+- **Traditional sniffing requires post-processing.** The Ymir -> WowPacketParser pipeline produces the best data, but turning raw packet captures into usable spell lists has always meant offline parsing, manual review, and hand-written SQL.
 
 **CreatureCodex works around all of this.** The client-side visual scraper polls cast bars at 10 Hz and scans nameplate auras at 5 Hz, wrapping every access in taint-safe helpers. This works on any server — repacks, custom builds, anything running a 12.x client.
 
@@ -61,7 +57,7 @@ CreatureCodex has three data sources:
 1. **Client-side visual scraper** (works everywhere, no server patches needed)
    - Polls `UnitCastingInfo`/`UnitChannelInfo` at 10 Hz for spell casts
    - Round-robin scans nameplates for auras at 5 Hz
-   - Records spell name, school, creature entry, health %, and timestamps
+   - Records spell name, school, creature entry, and timestamps (HP% is available from server hooks only)
 
 2. **Server-side sniffer** (requires TrinityCore C++ hooks)
    - Four `UnitScript` hooks broadcast every creature spell event as addon messages
@@ -79,7 +75,7 @@ When multiple sources run together, the addon deduplicates automatically — you
 
 ## Download
 
-Grab the latest release from the [Releases page](https://github.com/VoxCore84/CreatureCodex/releases). Download `CreatureCodex.zip` and extract it — it contains everything: the client addon, server scripts, SQL files, tools, and these docs.
+Grab the latest release from the [Releases page](https://github.com/VoxCore84/CreatureCodex/releases). Download `CreatureCodex.zip` and extract it — it contains the client addon, server scripts, tools, and these docs.
 
 ## Installation
 
@@ -88,7 +84,7 @@ Grab the latest release from the [Releases page](https://github.com/VoxCore84/Cr
 
 If you just want the visual scraper without modifying your server:
 
-1. Copy the `client/` folder contents into your WoW installation's addon folder:
+1. Copy the `CreatureCodex/` addon folder into your WoW installation's addon directory:
    ```
    <WoW Install>/Interface/AddOns/CreatureCodex/
    ```
@@ -101,7 +97,7 @@ If you just want the visual scraper without modifying your server:
 **What you get**: Visible casts and channels (anything the WoW API can detect).
 **What you miss**: Instant casts, hidden spells, and auras applied without visible cast bars.
 
-> **Tip:** If the addon doesn't appear in your addon list, check Game Menu → AddOns → enable **"Load out of date AddOns"** at the top. This is needed when the client version is newer than the addon's TOC Interface version.
+> **Tip:** If the addon doesn't appear in your addon list, check Game Menu -> AddOns -> enable **"Load out of date AddOns"** at the top. This is needed when the client version is newer than the addon's TOC Interface version.
 
 </details>
 
@@ -160,30 +156,9 @@ void OnAuraApply(Unit* target, AuraApplication* aurApp);
 
 ### Step 2: Wire the Hooks into Spell.cpp and Unit.cpp
 
-Add these one-liner hooks at four locations. Search for the function name to find each spot.
+Four one-liner hooks are added inside existing `if (Creature* caster = ...)` blocks in `Spell.cpp` and at the end of `Unit::_ApplyAura()` in `Unit.cpp`.
 
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendSpellGo()`, add at the end of the function (just before the closing `}`):
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureSpellCast(creature, m_spellInfo);
-```
-
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::cast()`, add near the top after the null-checks on `m_spellInfo`:
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureSpellStart(creature, m_spellInfo);
-```
-
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendChannelUpdate()`, find `if (time == 0)` and add inside that block:
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureChannelFinished(creature, m_spellInfo);
-```
-
-**`src/server/game/Entities/Unit/Unit.cpp`** — In `Unit::_ApplyAura()`, add at the end of the function (just before the closing `}`):
-```cpp
-sScriptMgr->OnAuraApply(this, aurApp);
-```
+See **`server/HOOKS.md`** for the exact code, variable names, and insertion points. The auto-patcher (`install_hooks.py`) applies these automatically — use `HOOKS.md` only if you prefer to patch by hand.
 
 ### Step 3: Add IsAddonRegistered Helper
 
@@ -212,14 +187,16 @@ bool WorldSession::IsAddonRegistered(std::string_view prefix) const
 RBAC_PERM_COMMAND_CREATURE_CODEX = 3012,
 ```
 
-Then apply the SQL:
-```
-mysql -u root -p auth < sql/auth_rbac_creature_codex.sql
+Then apply `sql/auth_rbac_creature_codex.sql` to your `auth` database, or run manually:
+```sql
+INSERT IGNORE INTO `rbac_permissions` (`id`, `name`) VALUES (3012, 'Command: codex');
+-- Link to GM role (role 193 = GM commands)
+INSERT IGNORE INTO `rbac_linked_permissions` (`id`, `linkedId`) VALUES (193, 3012);
 ```
 
 ### Step 5: Copy the Sniffer Scripts
 
-1. Copy `server/Custom/creature_codex_sniffer.cpp` and `server/Custom/cs_creature_codex.cpp` to your `src/server/scripts/Custom/` directory.
+1. Copy `server/creature_codex_sniffer.cpp` and `server/cs_creature_codex.cpp` to your `src/server/scripts/Custom/` directory.
 
 2. Register them in `custom_script_loader.cpp`:
    ```cpp
@@ -242,16 +219,23 @@ If you use Eluna, copy `server/lua_scripts/creature_codex_server.lua` to your El
 - **Zone completeness**: Query all creatures in a map with their known spell counts
 - **Multi-player aggregation**: Players can submit discoveries to a shared server-side table
 
-For aggregation, apply the SQL to whichever database you want the shared table in (default: `characters`):
-```
-mysql -u root -p characters < sql/codex_aggregated.sql
+For aggregation, create the shared table by running the following SQL against whichever database you want it in (default: `characters`):
+```sql
+CREATE TABLE IF NOT EXISTS `codex_aggregated` (
+    `creature_entry` INT UNSIGNED NOT NULL,
+    `spell_id` INT UNSIGNED NOT NULL,
+    `cast_count` INT UNSIGNED NOT NULL DEFAULT 1,
+    `last_reporter` VARCHAR(64) NOT NULL DEFAULT '',
+    `last_seen` INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (`creature_entry`, `spell_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-If you use a different database, also update `AGGREGATION_DB` at the top of `creature_codex_server.lua` to match.
+This table must exist in your `characters` database (the same one that `CharDBExecute` targets).
 
 ### Step 7: Build and Install
 
-1. Copy `client/` contents to `Interface\AddOns\CreatureCodex\`.
+1. Copy the `CreatureCodex/` addon folder contents to `Interface\AddOns\CreatureCodex\`.
 2. Rebuild your server. From your build directory:
    ```bash
    # CMake + Make (Linux)
@@ -288,7 +272,7 @@ If you sniff with Ymir, CreatureCodex works alongside it. The addon captures wha
 1. **Play normally** with Ymir + watcher running in the background
 2. **The addon captures visible casts and auras** in real time via the visual scraper
 3. **The watcher processes your WPP output** automatically as files appear — no manual steps
-4. **Click "Sync Sniff"** in the addon's browser panel (bottom bar) to pull in the new data
+4. **Type `/cc sync`** to reload the UI and import the new data
 5. The addon reports what it imported:
    ```
    [CreatureCodex] Imported sniff data: +142 creatures, +891 spells from WPP.
@@ -300,6 +284,8 @@ That's it. The visual scraper gives you spell names and real-time browsing. The 
 ### Requirements
 
 - Python 3.10+
+- GitHub CLI (`gh`) authenticated — install from [cli.github.com](https://cli.github.com)
+- curl (included by default on Windows 10+)
 - WowPacketParser (produces `.txt` output from Ymir `.pkt` captures)
 
 ### Direct SQL (Skip the Addon)
@@ -309,11 +295,11 @@ If you don't need to browse in-game and just want SQL from your sniff data:
 ```bash
 # creature_template_spell SQL (default)
 python tools/wpp_import.py sniff1.txt sniff2.txt
-# → creature_template_spell.sql
+# -> creature_template_spell.sql
 
 # SmartAI stubs with estimated cooldowns
 python tools/wpp_import.py --smartai sniff1.txt
-# → smart_scripts.sql
+# -> smart_scripts.sql
 
 # Both at once
 python tools/wpp_import.py --sql --smartai sniff1.txt
@@ -355,6 +341,7 @@ Use `-o` to override the output filename (single format only). Flags combine: `-
 | `/cc stats` | Print capture statistics |
 | `/cc zone` | Request zone creature data from server (requires Eluna) |
 | `/cc submit` | Submit aggregated data to server (requires Eluna) |
+| `/cc sync` | Reload UI to import WPP sniff data (run `wpp_import.py --addon` first) |
 | `/cc reset` | Clear all stored data (with confirmation) |
 
 ### GM Commands (requires RBAC 3012)
@@ -371,10 +358,12 @@ Use `-o` to override the output filename (single format only). Flags combine: `-
 
 The export panel offers four tabs:
 
-1. **Raw** — Plain text: `CreatureName (entry) - SpellName [spellId] x castCount`
+1. **Raw** — Machine-readable format: `entry:name|spellId:totalCount:school:spellName|...` (one creature per line, prefixed with `CCEXPORT:v3`)
 2. **SQL** — `INSERT INTO creature_template_spell` statements ready to apply
 3. **SmartAI** — `INSERT INTO smart_scripts` for AI-driven casting
 4. **New Only** — Same as SQL but filters to spells not already in `creature_template_spell`
+
+> **WARNING — Destructive Operation:** The SQL export uses `DELETE FROM creature_template_spell WHERE CreatureID = <entry>` and the SmartAI export uses `DELETE FROM smart_scripts WHERE entryorguid = <entry> AND source_type = 0` before inserting. This removes all existing spells/scripts for that creature and replaces them with what CreatureCodex observed. If you have hand-tuned data, back it up first or use the **New Only** tab, which uses `INSERT IGNORE` and never deletes.
 
 ### Applying the Exported SQL
 
@@ -408,34 +397,49 @@ The addon and server communicate over the `CCDX` addon message prefix using pipe
 | C->S | `CI` | `CI\|entry` | Request creature info |
 | C->S | `ZC` | `ZC\|mapId` | Request zone creatures |
 | C->S | `AG` | `AG\|entry\|spellId:count,...` | Submit aggregated data |
+| S->C | `AR` | `AR\|entry\|OK` | Aggregation acknowledgement |
 
 ## File Structure
 
 ```
 CreatureCodex/
-  client/
-    CreatureCodex.toc        -- Addon TOC
-    CreatureCodex.lua         -- Core engine (capture + DB)
-    Export.lua                -- 4-tab export panel
-    UI.lua                   -- Browser panel
-    Minimap.lua              -- LibDBIcon minimap button
-    Libs/                    -- LibStub, CallbackHandler, LibDataBroker, LibDBIcon
+  CreatureCodex/                          -- ADDON FOLDER (copy to Interface/AddOns/CreatureCodex/)
+    CreatureCodex.toc                     -- Addon TOC
+    CreatureCodex.lua                     -- Core engine (capture + DB)
+    Export.lua                            -- 4-tab export panel
+    UI.lua                                -- Browser panel
+    Minimap.lua                           -- LibDBIcon minimap button
+    Libs/                                 -- LibStub, CallbackHandler, LibDataBroker, LibDBIcon
   server/
-    Custom/
-      creature_codex_sniffer.cpp   -- C++ UnitScript hooks (broadcast layer)
-      cs_creature_codex.cpp        -- .codex GM command tree
+    creature_codex_sniffer.cpp            -- C++ UnitScript hooks (broadcast layer)
+    cs_creature_codex.cpp                 -- .codex GM command tree
+    install_hooks.py                      -- Auto-patcher for TC source hooks
+    HOOKS.md                              -- Manual patching reference
     lua_scripts/
-      creature_codex_server.lua    -- Eluna handlers (spell lists, aggregation)
-  sql/
-    auth_rbac_creature_codex.sql   -- RBAC permission for .codex command
-    codex_aggregated.sql           -- Multi-player aggregation table
+      creature_codex_server.lua           -- Eluna handlers (spell lists, aggregation)
   tools/
-    wpp_import.py                  -- WowPacketParser → SQL / addon import tool
-    wpp_watcher.py                 -- Background companion for Ymir (auto-import)
-  screenshots/                     -- README screenshots
-  README.md                        -- This file
-  README_RU.md                     -- Russian translation
-  README_DE.md                     -- German translation
+    wpp_import.py                         -- WPP -> SQL / addon import tool
+    wpp_watcher.py                        -- Background companion for auto-import
+    _README.txt                           -- Tools folder overview
+    parsed/
+      _What_To_Do_With_These_Files.txt    -- Guide for parsed output
+  _GUIDE/
+    01_Quick_Start.md                     -- Get running in 2 minutes
+    02_Server_Setup.md                    -- Server hooks + C++ setup
+    03_Retail_Sniffing.md                 -- Ymir + WPP pipeline
+    04_Understanding_Exports.md           -- Export formats explained
+  session.py                              -- Session manager (Ymir lifecycle + SV backup)
+  update_tools.py                         -- Tool downloader (requires gh CLI)
+  Start Ymir.bat                          -- Launch Ymir + session manager (Windows)
+  Update Tools.bat                        -- Download/update WPP and Ymir (Windows)
+  Parse Captures.bat                      -- Run WPP on existing .pkt files (Windows)
+  start_ymir.sh                           -- Launch Ymir + session manager (Linux/macOS)
+  update_tools.sh                         -- Download/update WPP and Ymir (Linux/macOS)
+  parse_captures.sh                       -- Run WPP on existing .pkt files (Linux/macOS)
+  README.md                               -- This file
+  README_RU.md                            -- Russian translation
+  README_DE.md                            -- German translation
+  LICENSE                                 -- MIT
 ```
 
 ## License

@@ -3,7 +3,7 @@
 wpp_watcher.py — Background companion for CreatureCodex + Ymir
 
 Watches a directory for WowPacketParser .txt output and automatically writes
-CreatureCodexWPP.lua to your WoW SavedVariables folder. Click "Sync Sniff"
+CreatureCodexWPP.lua to your WoW SavedVariables folder. Type "/cc sync"
 in the addon (or /reload) to import the data — never leave the game.
 
 Usage:
@@ -88,11 +88,9 @@ def is_wpp_file(filepath: Path) -> bool:
     """Quick check if a .txt file looks like WPP output."""
     try:
         with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
-            for line in f:
-                if 'SMSG_' in line or 'CMSG_' in line or 'ServerToClient:' in line:
-                    return True
-                if f.tell() > 4096:
-                    break
+            # Read up to 4KB to check for WPP opcode markers
+            head = f.read(4096)
+            return 'SMSG_' in head or 'CMSG_' in head or 'ServerToClient:' in head
     except (OSError, PermissionError):
         pass
     return False
@@ -105,7 +103,7 @@ def timestamp() -> str:
 def main():
     parser = argparse.ArgumentParser(
         description='Background companion for CreatureCodex + Ymir',
-        epilog='Start this alongside Ymir. Click "Sync Sniff" in CreatureCodex to import data.'
+        epilog='Start this alongside Ymir. Type "/cc sync" in CreatureCodex to import data.'
     )
     parser.add_argument('--watch-dir', type=Path, default=None,
                         help='Directory to watch for WPP .txt files (auto-detected if omitted)')
@@ -153,7 +151,7 @@ def main():
 
     # Watch loop
     print(f"[{timestamp()}] Watching for WPP output (checking every {args.poll}s)...")
-    print(f"[{timestamp()}] Click 'Sync Sniff' in CreatureCodex or /reload to import data.")
+    print(f"[{timestamp()}] Type '/cc sync' in CreatureCodex or /reload to import data.")
     print()
 
     seen_files: dict[Path, float] = {}
@@ -171,7 +169,7 @@ def main():
                 if all_wpp_files:
                     creatures = parse_wpp_files(all_wpp_files)
                     write_lua(creatures, str(output_path), var_name='CreatureCodexWPP')
-                    print(f"[{timestamp()}] Ready! Click 'Sync Sniff' in-game to import.")
+                    print(f"[{timestamp()}] Ready! Type '/cc sync' in-game to import.")
                     print()
 
             time.sleep(args.poll)
@@ -205,7 +203,7 @@ def process_all(watch_dir: Path, output_path: Path):
     print(f"Processing {len(txt_files)} file(s)...")
     creatures = parse_wpp_files([str(f) for f in txt_files])
     write_lua(creatures, str(output_path), var_name='CreatureCodexWPP')
-    print(f"\nReady! Click 'Sync Sniff' in-game or /reload to import.")
+    print(f"\nReady! Type '/cc sync' in-game or /reload to import.")
 
 
 if __name__ == '__main__':

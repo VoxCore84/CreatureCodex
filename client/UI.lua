@@ -11,7 +11,7 @@ local VISIBLE_ROWS = 17
 local SPELL_VISIBLE = 16
 local VERSION = GetAddOnMetadata and GetAddOnMetadata("CreatureCodex", "Version")
                 or C_AddOns and C_AddOns.GetAddOnMetadata("CreatureCodex", "Version")
-                or "1.1.0"
+                or "1.0.0"
 
 local _bitband = bitband or (bit and bit.band) or function(a, b) return 0 end
 
@@ -187,29 +187,27 @@ local statsText = statsBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall
 statsText:SetPoint("LEFT", 8, 0)
 statsText:SetTextColor(0.7, 0.7, 0.7)
 
-local sessionText = statsBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-sessionText:SetPoint("RIGHT", -8, 0)
-sessionText:SetTextColor(0.4, 1, 0.4)
-
 local snifferText = statsBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-snifferText:SetPoint("CENTER", 0, 0)
+snifferText:SetPoint("RIGHT", -8, 0)
 
 local statsUpdateTimer = 0
 local function UpdateStats()
     local totalC, totalS = CreatureCodex_CountDB()
-    statsText:SetText(totalC .. " creatures  |  " .. totalS .. " spells tracked")
     local sc, ss, sa = CreatureCodex_GetSessionStats()
+    local sessionPart = ""
     if sc > 0 or ss > 0 or (sa and sa > 0) then
-        sessionText:SetText("+" .. sc .. "C +" .. ss .. "S +" .. (sa or 0) .. "A")
-    else
-        sessionText:SetText("")
+        sessionPart = format("  |cff66ff66(+%d new)|r", sc + ss)
     end
+    statsText:SetText(format("%d creatures  |  %d spells%s", totalC, totalS, sessionPart))
     local srvCasts, srvActive = CreatureCodex_GetServerStats()
     if srvActive then
-        snifferText:SetText("|cff00ff00Server: ON|r (" .. srvCasts .. " casts)")
+        snifferText:SetText(format("|cff00ff00CreatureCodex: Active|r  %d server casts", srvCasts))
         snifferText:SetTextColor(0.3, 1, 0.3)
+    elseif totalC > 0 or sc > 0 then
+        snifferText:SetText("|cff88ccffCreatureCodex: Scanning|r")
+        snifferText:SetTextColor(0.5, 0.7, 1)
     else
-        snifferText:SetText("|cff888888Server: --")
+        snifferText:SetText("|cff888888CreatureCodex: Ready|r")
         snifferText:SetTextColor(0.5, 0.5, 0.5)
     end
 end
@@ -229,7 +227,7 @@ end)
 
 local searchFrame = CreateFrame("Frame", nil, f, "BackdropTemplate")
 searchFrame:SetSize(LIST_WIDTH, 24)
-searchFrame:SetPoint("TOPLEFT", 16, -62)
+searchFrame:SetPoint("TOPLEFT", 16, -84)
 searchFrame:SetBackdrop({
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -272,8 +270,8 @@ end)
 -- ============================================================
 
 local listPanel = CreateFrame("Frame", nil, f, "BackdropTemplate")
-listPanel:SetSize(LIST_WIDTH, PANEL_HEIGHT - 166)
-listPanel:SetPoint("TOPLEFT", 16, -90)
+listPanel:SetSize(LIST_WIDTH, PANEL_HEIGHT - 186)
+listPanel:SetPoint("TOPLEFT", 16, -110)
 listPanel:SetBackdrop({
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -352,6 +350,8 @@ for i = 1, VISIBLE_ROWS do
             GameTooltip:AddLine("Last seen: " .. date("%Y-%m-%d %H:%M", creature.lastSeen), 0.5, 0.5, 0.5)
         end
         GameTooltip:AddLine(self.countText:GetText() .. " spells recorded", 0.4, 0.8, 1)
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("|cff00ff00Ctrl-click|r Wowhead  |cff00ccffShift-click|r chat link", 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -429,7 +429,7 @@ end
 -- ============================================================
 
 local spellPanel = CreateFrame("Frame", nil, f, "BackdropTemplate")
-spellPanel:SetSize(PANEL_WIDTH - LIST_WIDTH - 48, PANEL_HEIGHT - 166)
+spellPanel:SetSize(PANEL_WIDTH - LIST_WIDTH - 48, PANEL_HEIGHT - 186)
 spellPanel:SetPoint("TOPLEFT", listPanel, "TOPRIGHT", 8, 0)
 spellPanel:SetBackdrop({
     bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -554,7 +554,7 @@ for i = 1, SPELL_VISIBLE do
                 creature.spells[sid] = nil
             end
             -- Add to global blacklist
-            CreatureCodex_IgnoreSpell(sid)
+            CreatureCodex_IgnoreSpell(sid, sname)
             -- Refresh display
             RebuildCreatureList()
             RebuildSpellList()
@@ -562,7 +562,7 @@ for i = 1, SPELL_VISIBLE do
             CreatureCodex_RefreshSpellList()
             UpdateStats()
             PlaySound(882)
-            print("|cff00ccff[CreatureCodex]|r Spell " .. sid .. " (" .. sname .. ") ignored and removed.")
+            print("|cff00ccff[CreatureCodex]|r Spell " .. sid .. " (" .. sname .. ") ignored. Open the |cffffa040Ignored|r tab to undo.")
         end
     end)
 
@@ -722,12 +722,10 @@ function CreatureCodex_RefreshSpellList()
 end
 
 -- ============================================================
--- Bottom action bar
+-- Tab system (Browse | Ignored | Settings)
 -- ============================================================
 
-local actionBar = CreateFrame("Frame", nil, f)
-actionBar:SetSize(PANEL_WIDTH - 32, 30)
-actionBar:SetPoint("BOTTOMLEFT", 16, 12)
+local currentTab = "browse"
 
 local function MakeButton(parent, text, width, color)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
@@ -756,11 +754,51 @@ local function MakeButton(parent, text, width, color)
     return btn
 end
 
+-- Tab bar (just below stats bar)
+local tabBar = CreateFrame("Frame", nil, f)
+tabBar:SetSize(PANEL_WIDTH - 32, 24)
+tabBar:SetPoint("TOPLEFT", 16, -58)
+
+local tabButtons = {}
+local TAB_COLORS = {
+    active   = {0, 0.5, 0.8},
+    inactive = {0.15, 0.15, 0.2},
+}
+
+local function MakeTab(text, tabId, xOff)
+    local btn = CreateFrame("Button", nil, tabBar, "BackdropTemplate")
+    btn:SetSize(100, 22)
+    btn:SetPoint("LEFT", xOff, 0)
+    btn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+    })
+    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    label:SetPoint("CENTER")
+    label:SetText(text)
+    btn.label = label
+    btn.tabId = tabId
+    tabButtons[#tabButtons + 1] = btn
+    return btn
+end
+
+local tabBrowse   = MakeTab("Browse", "browse", 0)
+local tabIgnored  = MakeTab("Ignored", "ignored", 106)
+local tabSettings = MakeTab("Settings", "settings", 212)
+
+-- Forward-declare SwitchTab; defined after all panels exist
+local SwitchTab
+
+-- Bottom action bar (only visible on Browse tab)
+local actionBar = CreateFrame("Frame", "CreatureCodexActionBar", f)
+actionBar:SetSize(PANEL_WIDTH - 32, 30)
+actionBar:SetPoint("BOTTOMLEFT", 16, 12)
+
 -- Export button
 local exportBtn = MakeButton(actionBar, "Export Data", 120, {0, 0.5, 0.8})
 exportBtn:SetPoint("LEFT", 0, 0)
 exportBtn:SetScript("OnClick", function()
-    PlaySound(852)  -- IG_MAINMENU_OPTION
+    PlaySound(852)
     CreatureCodex_Export()
 end)
 
@@ -774,10 +812,9 @@ refreshBtn:SetScript("OnClick", function()
     CreatureCodex_RefreshSpellList()
     UpdateStats()
     PlaySound(852)
-    print("|cff00ccff[CreatureCodex]|r Browser refreshed.")
 end)
 
--- Blacklist selected creature button
+-- Ignore NPC button
 local blacklistBtn = MakeButton(actionBar, "Ignore NPC", 100, {0.5, 0.3, 0.1})
 blacklistBtn:SetPoint("LEFT", refreshBtn, "RIGHT", 8, 0)
 blacklistBtn:SetScript("OnClick", function()
@@ -793,130 +830,14 @@ blacklistBtn:SetScript("OnClick", function()
         CreatureCodex_RefreshCreatureList()
         CreatureCodex_RefreshSpellList()
         UpdateStats()
-        PlaySound(882)  -- IG_PLAYER_INVITE_DECLINE (warning sound)
-        print("|cff00ccff[CreatureCodex]|r " .. name .. " added to blacklist and removed from data.")
+        PlaySound(882)
+        print("|cff00ccff[CreatureCodex]|r " .. name .. " ignored. Open the |cffffa040Ignored|r tab to undo.")
     end
 end)
 
--- Reset button (far right)
-local resetBtn = MakeButton(actionBar, "Reset All", 90, {0.6, 0.1, 0.1})
-resetBtn:SetPoint("RIGHT", 0, 0)
-resetBtn:SetScript("OnClick", function()
-    PlaySound(882)
-    StaticPopup_Show("CREATURECODEX_RESET")
-end)
-
--- Debug toggle button
-local debugBtn = MakeButton(actionBar, "Debug", 70, {0.4, 0.4, 0.4})
-debugBtn:SetPoint("LEFT", blacklistBtn, "RIGHT", 8, 0)
-debugBtn.label = select(1, debugBtn:GetRegions()) -- the FontString
-debugBtn:SetScript("OnClick", function()
-    CreatureCodex_ToggleDebug()
-    local on = CreatureCodex_IsDebug()
-    PlaySound(852)
-    if on then
-        debugBtn:SetBackdropColor(0.1, 0.6, 0.1, 0.9)
-        debugBtn:SetBackdropBorderColor(0.1, 0.8, 0.1, 0.9)
-        print("|cff00ccff[CreatureCodex]|r Debug |cff00ff00ON|r — fight mobs to see scraper output in chat")
-    else
-        debugBtn:SetBackdropColor(0.4, 0.4, 0.4, 0.6)
-        debugBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.9)
-        print("|cff00ccff[CreatureCodex]|r Debug |cffff0000OFF|r")
-    end
-end)
-debugBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Toggle Debug", 1, 1, 1)
-    GameTooltip:AddLine("Shows raw scraper data in chat", 0.6, 0.6, 0.6)
-    GameTooltip:AddLine("Use when tracking isn't working", 0.6, 0.6, 0.6)
-    GameTooltip:Show()
-end)
-debugBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
--- Sync Sniff Data button (Ymir users: reload UI to pull in WPP data)
-local syncBtn = MakeButton(actionBar, "Sync Sniff", 90, {0.7, 0.4, 0.0})
-syncBtn:SetPoint("LEFT", debugBtn, "RIGHT", 8, 0)
-syncBtn:SetScript("OnClick", function()
-    PlaySound(852)
-    ReloadUI()
-end)
-syncBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Sync Sniff Data", 1, 0.8, 0)
-    GameTooltip:AddLine("Reloads the UI to import new data from", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine("WowPacketParser (Ymir sniff captures).", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Run wpp_import.py --addon on your WPP output,", 0.6, 0.6, 0.6)
-    GameTooltip:AddLine("or start wpp_watcher.py to do it automatically.", 0.6, 0.6, 0.6)
-    GameTooltip:AddLine("Then click this button to pull in the data.", 0.6, 0.6, 0.6)
-    GameTooltip:Show()
-end)
-syncBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
--- Utility buttons (second row above action bar)
-local utilBar = CreateFrame("Frame", nil, f)
-utilBar:SetSize(PANEL_WIDTH - 32, 30)
-utilBar:SetPoint("BOTTOMLEFT", 16, 42)
-
-local statsBtn = MakeButton(utilBar, "Stats", 60, {0.3, 0.4, 0.6})
-statsBtn:SetPoint("LEFT", 0, 0)
-statsBtn:SetScript("OnClick", function()
-    PlaySound(852)
-    local totalC, totalS = CreatureCodex_CountDB()
-    local sc, ss, sa = CreatureCodex_GetSessionStats()
-    local srvCasts, srvActive = CreatureCodex_GetServerStats()
-    print("|cff00ccff[CreatureCodex]|r Stats:")
-    print(format("  Total: %d creatures, %d spells", totalC, totalS))
-    print(format("  Session: +%d creatures, +%d spells, +%d auras", sc, ss, sa))
-    print(format("  Server sniffer: %s (%d casts received)", srvActive and "ACTIVE" or "inactive", srvCasts))
-end)
-statsBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Show Stats", 1, 1, 1)
-    GameTooltip:AddLine("Prints detailed database and session", 0.6, 0.6, 0.6)
-    GameTooltip:AddLine("statistics to the chat window.", 0.6, 0.6, 0.6)
-    GameTooltip:Show()
-end)
-statsBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-local zoneBtn = MakeButton(utilBar, "Zone Scan", 80, {0.2, 0.5, 0.5})
-zoneBtn:SetPoint("LEFT", statsBtn, "RIGHT", 8, 0)
-zoneBtn:SetScript("OnClick", function()
-    PlaySound(852)
-    CreatureCodex_RequestZoneCreatures()
-    print("|cff00ccff[CreatureCodex]|r Requesting zone creatures from server...")
-end)
-zoneBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Zone Scan", 0.2, 1, 1)
-    GameTooltip:AddLine("Requests all creatures in your current zone", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine("from the server and checks coverage.", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Requires server-side hooks (repack/emulator).", 0.6, 0.6, 0.6)
-    GameTooltip:Show()
-end)
-zoneBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
-local submitBtn = MakeButton(utilBar, "Submit", 70, {0.5, 0.3, 0.6})
-submitBtn:SetPoint("LEFT", zoneBtn, "RIGHT", 8, 0)
-submitBtn:SetScript("OnClick", function()
-    PlaySound(852)
-    CreatureCodex_SubmitAggregation()
-end)
-submitBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Submit Data", 0.8, 0.5, 1)
-    GameTooltip:AddLine("Sends your collected data to the server", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine("for multi-player data aggregation.", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Requires server-side hooks (repack/emulator).", 0.6, 0.6, 0.6)
-    GameTooltip:Show()
-end)
-submitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-
--- Result count label
+-- Result count label (far right of action bar)
 resultCount = actionBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-resultCount:SetPoint("LEFT", syncBtn, "RIGHT", 12, 0)
+resultCount:SetPoint("RIGHT", 0, 0)
 resultCount:SetTextColor(0.5, 0.5, 0.5)
 
 -- ============================================================
@@ -987,8 +908,8 @@ end
 -- ============================================================
 
 local ignoredPanel = CreateFrame("Frame", nil, f, "BackdropTemplate")
-ignoredPanel:SetSize(PANEL_WIDTH - 32, PANEL_HEIGHT - 166)
-ignoredPanel:SetPoint("TOPLEFT", 16, -90)
+ignoredPanel:SetSize(PANEL_WIDTH - 32, PANEL_HEIGHT - 100)
+ignoredPanel:SetPoint("TOPLEFT", 16, -84)
 ignoredPanel:SetBackdrop({
     bgFile = "Interface\\Buttons\\WHITE8x8",
     edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -1011,80 +932,238 @@ ignoredContent:SetSize(PANEL_WIDTH - 80, 1)
 ignoredScroll:SetScrollChild(ignoredContent)
 
 local ignoredRows = {}
-local showingIgnored = false
+
+local function MakeIgnoredRow(parent, y, label, color, onUnignore)
+    local row = CreateFrame("Frame", nil, parent)
+    row:SetSize(PANEL_WIDTH - 80, 22)
+    row:SetPoint("TOPLEFT", 0, -y)
+
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    nameText:SetPoint("LEFT", 4, 0)
+    nameText:SetText(color .. label .. "|r")
+
+    local unignoreBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
+    unignoreBtn:SetSize(70, 18)
+    unignoreBtn:SetPoint("RIGHT", -4, 0)
+    unignoreBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    unignoreBtn:SetBackdropColor(0.2, 0.5, 0.2, 0.6)
+    unignoreBtn:SetBackdropBorderColor(0.3, 0.6, 0.3, 0.9)
+    local btnLabel = unignoreBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    btnLabel:SetPoint("CENTER")
+    btnLabel:SetText("Unignore")
+    btnLabel:SetTextColor(1, 1, 1)
+    unignoreBtn:SetScript("OnClick", onUnignore)
+
+    return row
+end
 
 local function RefreshIgnoredPanel()
-    -- Clear old rows
     for _, row in ipairs(ignoredRows) do row:Hide() end
     wipe(ignoredRows)
 
-    local ignored = CreatureCodex_GetIgnoredList()
     local y = 0
-    local count = 0
-    for entry, info in pairs(ignored) do
-        count = count + 1
-        local row = CreateFrame("Frame", nil, ignoredContent)
-        row:SetSize(PANEL_WIDTH - 80, 22)
-        row:SetPoint("TOPLEFT", 0, -y)
+    local creatureCount, spellCount = 0, 0
 
-        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-        nameText:SetPoint("LEFT", 4, 0)
-        nameText:SetText(format("|cffffa040%s|r  (entry %d)", info.name or "Unknown", entry))
+    -- Section: Ignored Creatures
+    local creatures = CreatureCodex_GetIgnoredCreatures()
+    local hasCreatures = next(creatures) ~= nil
+    if hasCreatures then
+        local header = CreateFrame("Frame", nil, ignoredContent)
+        header:SetSize(PANEL_WIDTH - 80, 18)
+        header:SetPoint("TOPLEFT", 0, -y)
+        local hText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        hText:SetPoint("LEFT", 4, 0)
+        hText:SetText("Creatures")
+        hText:SetTextColor(0.8, 0.5, 0.2)
+        ignoredRows[#ignoredRows + 1] = header
+        y = y + 20
 
-        local unignoreBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
-        unignoreBtn:SetSize(70, 18)
-        unignoreBtn:SetPoint("RIGHT", -4, 0)
-        unignoreBtn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-        })
-        unignoreBtn:SetBackdropColor(0.2, 0.5, 0.2, 0.6)
-        unignoreBtn:SetBackdropBorderColor(0.3, 0.6, 0.3, 0.9)
-        local btnLabel = unignoreBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btnLabel:SetPoint("CENTER")
-        btnLabel:SetText("Unignore")
-        btnLabel:SetTextColor(1, 1, 1)
-        unignoreBtn:SetScript("OnClick", function()
-            CreatureCodex_UnignoreCreature(entry)
-            PlaySound(852)
-            print(format("|cff00ccff[CreatureCodex]|r Unignored %s (entry %d). Walk near it to recapture.", info.name or "Unknown", entry))
-            RefreshIgnoredPanel()
-        end)
+        for entry, info in pairs(creatures) do
+            creatureCount = creatureCount + 1
+            local row = MakeIgnoredRow(ignoredContent, y,
+                format("%s  |cff888888(entry %d)|r", info.name or "Unknown", entry),
+                "|cffffa040",
+                function()
+                    CreatureCodex_UnignoreCreature(entry)
+                    PlaySound(852)
+                    print(format("|cff00ccff[CreatureCodex]|r Unignored %s (entry %d). Walk near it to recapture.", info.name or "Unknown", entry))
+                    RefreshIgnoredPanel()
+                end)
+            ignoredRows[#ignoredRows + 1] = row
+            y = y + 24
+        end
+        y = y + 8  -- spacing between sections
+    end
 
-        ignoredRows[#ignoredRows + 1] = row
+    -- Section: Ignored Spells
+    local spells = CreatureCodex_GetIgnoredSpells()
+    local hasSpells = next(spells) ~= nil
+    if hasSpells then
+        local header = CreateFrame("Frame", nil, ignoredContent)
+        header:SetSize(PANEL_WIDTH - 80, 18)
+        header:SetPoint("TOPLEFT", 0, -y)
+        local hText = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        hText:SetPoint("LEFT", 4, 0)
+        hText:SetText("Spells")
+        hText:SetTextColor(0.4, 0.6, 1)
+        ignoredRows[#ignoredRows + 1] = header
+        y = y + 20
+
+        for spellId, info in pairs(spells) do
+            spellCount = spellCount + 1
+            local row = MakeIgnoredRow(ignoredContent, y,
+                format("%s  |cff888888[%d]|r", info.name or "Unknown", spellId),
+                "|cff6699ff",
+                function()
+                    CreatureCodex_UnignoreSpell(spellId)
+                    PlaySound(852)
+                    print(format("|cff00ccff[CreatureCodex]|r Unignored spell %s (%d).", info.name or "Unknown", spellId))
+                    RefreshIgnoredPanel()
+                end)
+            ignoredRows[#ignoredRows + 1] = row
+            y = y + 24
+        end
+    end
+
+    if not hasCreatures and not hasSpells then
+        local empty = CreateFrame("Frame", nil, ignoredContent)
+        empty:SetSize(PANEL_WIDTH - 80, 22)
+        empty:SetPoint("TOPLEFT", 0, -y)
+        local emptyText = empty:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        emptyText:SetPoint("LEFT", 4, 0)
+        emptyText:SetText("|cff666666No ignored creatures or spells.|r")
+        ignoredRows[#ignoredRows + 1] = empty
         y = y + 24
     end
 
     ignoredContent:SetHeight(math.max(y, 1))
-    ignoredTitle:SetText(format("Ignored Creatures (%d)", count))
+    ignoredTitle:SetText(format("Ignored  |cffffa040%d creatures|r  |cff6699ff%d spells|r", creatureCount, spellCount))
 end
 
--- Ignored toggle button on utility bar
-local ignoredBtn = MakeButton(utilBar, "Ignored", 70, {0.6, 0.3, 0.1})
-ignoredBtn:SetPoint("LEFT", submitBtn, "RIGHT", 8, 0)
-ignoredBtn:SetScript("OnClick", function()
+-- ============================================================
+-- Settings panel
+-- ============================================================
+
+local settingsPanel = CreateFrame("Frame", nil, f, "BackdropTemplate")
+settingsPanel:SetSize(PANEL_WIDTH - 32, PANEL_HEIGHT - 100)
+settingsPanel:SetPoint("TOPLEFT", 16, -84)
+settingsPanel:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 1,
+})
+settingsPanel:SetBackdropColor(0, 0, 0, 0.3)
+settingsPanel:SetBackdropBorderColor(0.3, 0.3, 0.5, 0.6)
+settingsPanel:Hide()
+
+local settingsTitle = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+settingsTitle:SetPoint("TOP", 0, -8)
+settingsTitle:SetText("Settings")
+settingsTitle:SetTextColor(0.6, 0.6, 0.8)
+
+-- Debug toggle
+local debugBtn = MakeButton(settingsPanel, "Toggle Debug", 140, {0.3, 0.3, 0.5})
+debugBtn:SetPoint("TOPLEFT", 16, -40)
+debugBtn:SetScript("OnClick", function()
+    CreatureCodex_ToggleDebug()
     PlaySound(852)
-    showingIgnored = not showingIgnored
-    if showingIgnored then
-        RefreshIgnoredPanel()
-        ignoredPanel:Show()
-        listPanel:Hide()
-        spellPanel:Hide()
-    else
-        ignoredPanel:Hide()
+    local state = CreatureCodex_IsDebug() and "|cff00ff00ON|r" or "|cffff4444OFF|r"
+    print("|cff00ccff[CreatureCodex]|r Debug mode: " .. state)
+end)
+
+-- Reset All
+local resetBtn = MakeButton(settingsPanel, "Reset All Data", 140, {0.6, 0.15, 0.15})
+resetBtn:SetPoint("TOPLEFT", debugBtn, "BOTTOMLEFT", 0, -24)
+resetBtn:SetScript("OnClick", function()
+    StaticPopup_Show("CREATURECODEX_RESET_CONFIRM")
+end)
+
+StaticPopupDialogs["CREATURECODEX_RESET_CONFIRM"] = {
+    text = "Reset ALL CreatureCodex data?\nThis cannot be undone.",
+    button1 = "Reset",
+    button2 = "Cancel",
+    OnAccept = function()
+        if CreatureCodexDB then
+            CreatureCodexDB.creatures = {}
+            CreatureCodexDB.creatureBlacklist = {}
+            CreatureCodexDB.spellBlacklist = {}
+            CreatureCodexDB.ignored = {}
+            CreatureCodexDB.ignoredSpells = {}
+        end
+        selectedEntry = nil
+        RebuildCreatureList()
+        RebuildSpellList()
+        CreatureCodex_RefreshCreatureList()
+        CreatureCodex_RefreshSpellList()
+        UpdateStats()
+        PlaySound(882)
+        print("|cff00ccff[CreatureCodex]|r All data has been reset.")
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+}
+
+-- Version info at bottom of settings
+local versionInfo = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+versionInfo:SetPoint("BOTTOMLEFT", 16, 12)
+versionInfo:SetText("|cff666666CreatureCodex v" .. VERSION .. "|r")
+
+-- ============================================================
+-- SwitchTab — show/hide panels per tab
+-- ============================================================
+
+SwitchTab = function(tabId)
+    currentTab = tabId
+
+    -- Update tab button appearance
+    for _, btn in ipairs(tabButtons) do
+        if btn.tabId == tabId then
+            btn:SetBackdropColor(TAB_COLORS.active[1], TAB_COLORS.active[2], TAB_COLORS.active[3], 0.8)
+            btn:SetBackdropBorderColor(TAB_COLORS.active[1], TAB_COLORS.active[2], TAB_COLORS.active[3], 1)
+            btn.label:SetTextColor(1, 1, 1)
+        else
+            btn:SetBackdropColor(TAB_COLORS.inactive[1], TAB_COLORS.inactive[2], TAB_COLORS.inactive[3], 0.6)
+            btn:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.6)
+            btn.label:SetTextColor(0.6, 0.6, 0.6)
+        end
+    end
+
+    -- Hide everything first
+    searchFrame:Hide()
+    listPanel:Hide()
+    spellPanel:Hide()
+    actionBar:Hide()
+    ignoredPanel:Hide()
+    settingsPanel:Hide()
+
+    if tabId == "browse" then
+        searchFrame:Show()
         listPanel:Show()
         spellPanel:Show()
+        actionBar:Show()
+    elseif tabId == "ignored" then
+        RefreshIgnoredPanel()
+        ignoredPanel:Show()
+    elseif tabId == "settings" then
+        settingsPanel:Show()
     end
-end)
-ignoredBtn:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
-    GameTooltip:SetText("Ignored Creatures", 0.8, 0.5, 0.2)
-    GameTooltip:AddLine("View and manage blacklisted creatures.", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine("Unignore to allow recapture.", 0.6, 0.6, 0.6)
-    GameTooltip:Show()
-end)
-ignoredBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+end
+
+-- Wire tab buttons
+for _, btn in ipairs(tabButtons) do
+    btn:SetScript("OnClick", function(self)
+        PlaySound(852)
+        SwitchTab(self.tabId)
+    end)
+end
+
+-- Initialize to Browse tab
+SwitchTab("browse")
 
 -- ============================================================
 -- Resize grip (bottom-right corner, Simulationcraft pattern)
@@ -1133,6 +1212,7 @@ function CreatureCodex_ToggleUI()
         CreatureCodex_RefreshSpellList()
         UpdateStats()
         resultCount:SetText(#sortedCreatures .. " creatures")
+        SwitchTab("browse")
         f:Show()
         PlaySound(839)   -- IG_CHARACTER_INFO_OPEN
     end

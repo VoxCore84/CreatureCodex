@@ -1,20 +1,16 @@
-# CreatureCodex
+# CreatureCodex v1.0.0
 
-[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=latest)](https://github.com/VoxCore84/CreatureCodex/releases)
+[![GitHub](https://img.shields.io/github/v/release/VoxCore84/CreatureCodex?label=v1.0.0)](https://github.com/VoxCore84/CreatureCodex/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Ваши NPC не сражаются. Они стоят и бьют автоатакой, потому что `creature_template_spell` (таблица базы данных, назначающая заклинания существам) пуст и нет SmartAI (система скриптового поведения TrinityCore), который бы говорил им что кастовать. CreatureCodex решает эту проблему.
 
 **Репозиторий:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
-![Браузер — список существ, детали заклинаний, тултип с ID заклинания/статусом/зонами](screenshots/browser.jpg)
-
-![Режим отладки — вывод визуального сканера с entry существ, названиями заклинаний, школами](screenshots/debug.jpg)
-
 ## Что он делает
 
 1. **Установите аддон** на любой сервер TrinityCore — включая репаки, без патчей сервера
-2. **Гуляйте рядом с существами** — аддон захватывает каждый каст, каналирование и ауру в реальном времени
+2. **Гуляйте рядом с существами** — аддон захватывает видимые касты, каналирования и ауры в реальном времени (серверные хуки добавляют мгновенные/скрытые заклинания для 100% покрытия)
 3. **Откройте панель экспорта**, вкладка **SmartAI** — готовый SQL с рассчитанными кулдаунами, фазами по HP и типами целей
 4. **Примените SQL** — ваши NPC теперь кастуют заклинания с правильным таймингом и поведением
 
@@ -34,7 +30,7 @@ CreatureCodex превращает наблюдение в рабочий SmartA
                                                   └── new-only (только пробелы)
 ```
 
-Экспорт SmartAI — это не просто список ID заклинаний. Он использует тайминг-аналитику аддона для оценки кулдаунов по наблюдённым интервалам кастов, определяет фазовые способности по HP (заклинания, замеченные только ниже 40% HP, получают `event_type=2` вместо повторов по таймеру), и определяет типы целей по соотношению кастов к аурам. Это черновик, который можно доработать, а не чистый лист.
+Экспорт SmartAI — это не просто список ID заклинаний. Он использует тайминг-аналитику аддона для оценки кулдаунов по наблюдённым интервалам кастов, определяет фазовые способности по HP (заклинания, замеченные хотя бы раз ниже 40% HP, получают `event_type=2` вместо повторов по таймеру), и определяет типы целей по соотношению кастов к аурам. Это черновик, который можно доработать, а не чистый лист.
 
 ## Почему это сложно без него
 
@@ -61,7 +57,7 @@ CreatureCodex имеет три источника данных:
 1. **Клиентский визуальный сканер** (работает везде, без патчей сервера)
    - Опрашивает `UnitCastingInfo`/`UnitChannelInfo` с частотой 10 Гц
    - Сканирует неймплейты на наличие аур с частотой 5 Гц
-   - Записывает название заклинания, школу, entry существа, % HP и метки времени
+   - Записывает название заклинания, школу, entry существа и метки времени (% HP доступен только через серверные хуки)
 
 2. **Серверный сниффер** (требует хуки C++ в TrinityCore)
    - Четыре хука `UnitScript` транслируют каждое событие заклинания как аддон-сообщение
@@ -79,7 +75,7 @@ CreatureCodex имеет три источника данных:
 
 ## Скачать
 
-Загрузите последний релиз со [страницы релизов](https://github.com/VoxCore84/CreatureCodex/releases). Скачайте `CreatureCodex.zip` и распакуйте — в архиве всё: клиентский аддон, серверные скрипты, SQL-файлы, инструменты и документация.
+Загрузите последний релиз со [страницы релизов](https://github.com/VoxCore84/CreatureCodex/releases). Скачайте `CreatureCodex.zip` и распакуйте — в архиве всё: клиентский аддон, серверные скрипты, инструменты и документация.
 
 ## Установка
 
@@ -88,7 +84,7 @@ CreatureCodex имеет три источника данных:
 
 Если вам нужен только визуальный сканер без модификации сервера:
 
-1. Скопируйте содержимое папки `client/` в папку аддонов вашей установки WoW:
+1. Скопируйте папку `CreatureCodex/` (с .lua файлами) в папку аддонов вашей установки WoW:
    ```
    <Папка WoW>/Interface/AddOns/CreatureCodex/
    ```
@@ -160,30 +156,9 @@ void OnAuraApply(Unit* target, AuraApplication* aurApp);
 
 ### Шаг 2: Подключить хуки в Spell.cpp и Unit.cpp
 
-Добавьте эти однострочные хуки в четырёх местах. Ищите по имени функции.
+Четыре однострочных хука добавляются внутри существующих блоков `if (Creature* caster = ...)` в `Spell.cpp` и в конце `Unit::_ApplyAura()` в `Unit.cpp`.
 
-**`src/server/game/Spells/Spell.cpp`** — В `Spell::SendSpellGo()`, добавьте в конце функции (перед закрывающей `}`):
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureSpellCast(creature, m_spellInfo);
-```
-
-**`src/server/game/Spells/Spell.cpp`** — В `Spell::cast()`, добавьте в начале после проверок `m_spellInfo`:
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureSpellStart(creature, m_spellInfo);
-```
-
-**`src/server/game/Spells/Spell.cpp`** — В `Spell::SendChannelUpdate()`, найдите `if (time == 0)` и добавьте внутри этого блока:
-```cpp
-if (Creature* creature = m_caster->ToCreature())
-    sScriptMgr->OnCreatureChannelFinished(creature, m_spellInfo);
-```
-
-**`src/server/game/Entities/Unit/Unit.cpp`** — В `Unit::_ApplyAura()`, добавьте в конце функции (перед закрывающей `}`):
-```cpp
-sScriptMgr->OnAuraApply(this, aurApp);
-```
+Точный код, имена переменных и точки вставки см. в **`server/HOOKS.md`**. Авто-патчер (`install_hooks.py`) применяет их автоматически — используйте `HOOKS.md` только если предпочитаете ручной патчинг.
 
 ### Шаг 3: Добавить вспомогательный метод IsAddonRegistered
 
@@ -212,14 +187,16 @@ bool WorldSession::IsAddonRegistered(std::string_view prefix) const
 RBAC_PERM_COMMAND_CREATURE_CODEX = 3012,
 ```
 
-Затем применить SQL:
-```
-mysql -u root -p auth < sql/auth_rbac_creature_codex.sql
+Затем применить `sql/auth_rbac_creature_codex.sql` к базе данных `auth`, или вручную:
+```sql
+INSERT IGNORE INTO `rbac_permissions` (`id`, `name`) VALUES (3012, 'Command: codex');
+-- Привязать к роли GM (роль 193 = GM-команды)
+INSERT IGNORE INTO `rbac_linked_permissions` (`id`, `linkedId`) VALUES (193, 3012);
 ```
 
 ### Шаг 5: Скопировать скрипты сниффера
 
-1. Скопируйте `server/Custom/creature_codex_sniffer.cpp` и `server/Custom/cs_creature_codex.cpp` в `src/server/scripts/Custom/`.
+1. Скопируйте `server/creature_codex_sniffer.cpp` и `server/cs_creature_codex.cpp` в `src/server/scripts/Custom/`.
 
 2. Зарегистрируйте их в `custom_script_loader.cpp`:
    ```cpp
@@ -242,16 +219,23 @@ mysql -u root -p auth < sql/auth_rbac_creature_codex.sql
 - **Полнота по зоне**: Запрос всех существ на карте с количеством известных заклинаний
 - **Многопользовательская агрегация**: Игроки могут отправлять открытия в общую серверную таблицу
 
-Для агрегации примените SQL к базе данных, в которой хотите хранить общую таблицу (по умолчанию: `characters`):
-```
-mysql -u root -p characters < sql/codex_aggregated.sql
+Для агрегации создайте таблицу в базе данных (по умолчанию: `characters`):
+```sql
+CREATE TABLE IF NOT EXISTS `codex_aggregated` (
+    `creature_entry` INT UNSIGNED NOT NULL,
+    `spell_id` INT UNSIGNED NOT NULL,
+    `cast_count` INT UNSIGNED NOT NULL DEFAULT 1,
+    `last_reporter` VARCHAR(64) NOT NULL DEFAULT '',
+    `last_seen` INT UNSIGNED NOT NULL DEFAULT 0,
+    PRIMARY KEY (`creature_entry`, `spell_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 ```
 
-Если используете другую базу данных, также обновите `AGGREGATION_DB` в начале файла `creature_codex_server.lua`.
+Эта таблица должна существовать в вашей базе данных `characters` (той же, которую использует `CharDBExecute`).
 
 ### Шаг 7: Сборка и установка
 
-1. Скопируйте содержимое `client/` в `Interface\AddOns\CreatureCodex\`.
+1. Скопируйте папку `CreatureCodex/` в `Interface\AddOns\CreatureCodex\`.
 2. Пересоберите сервер. Из директории сборки:
    ```bash
    # CMake + Make (Linux)
@@ -347,6 +331,7 @@ mysql -u root -p world < creature_template_spell.sql
 | `/cc stats` | Вывести статистику захвата |
 | `/cc zone` | Запросить данные о существах зоны с сервера (требуется Eluna) |
 | `/cc submit` | Отправить агрегированные данные на сервер (требуется Eluna) |
+| `/cc sync` | Перезагрузить UI для импорта данных WPP-снифа (сначала запустите `wpp_import.py --addon`) |
 | `/cc reset` | Очистить все сохранённые данные (с подтверждением) |
 
 ### GM-команды (требуется RBAC 3012)
@@ -363,7 +348,7 @@ mysql -u root -p world < creature_template_spell.sql
 
 Панель экспорта предлагает четыре вкладки:
 
-1. **Raw** — Текст: `ИмяСущества (entry) - ИмяЗаклинания [spellId] x количество`
+1. **Raw** — Машиночитаемый формат: `entry:имя|spellId:всего:школа:имяЗаклинания|...` (одно существо на строку, с префиксом `CCEXPORT:v3`)
 2. **SQL** — Готовые `INSERT INTO creature_template_spell`
 3. **SmartAI** — `INSERT INTO smart_scripts` для AI-кастов
 4. **New Only** — Как SQL, но только заклинания отсутствующие в `creature_template_spell`
@@ -400,33 +385,49 @@ mysql -u root -p world < creature_template_spell.sql
 | C->S | `CI` | `CI\|entry` | Запрос информации о существе |
 | C->S | `ZC` | `ZC\|mapId` | Запрос существ зоны |
 | C->S | `AG` | `AG\|entry\|spellId:count,...` | Отправка агрегированных данных |
+| S->C | `AR` | `AR\|entry\|OK` | Подтверждение агрегации |
 
 ## Структура файлов
 
 ```
 CreatureCodex/
-  client/                          -- Клиентский аддон
+  CreatureCodex/                          -- ПАПКА АДДОНА (копировать в Interface/AddOns/CreatureCodex/)
     CreatureCodex.toc
-    CreatureCodex.lua              -- Ядро (захват + БД)
-    Export.lua                     -- 4-вкладочный экспорт
-    UI.lua                        -- Панель просмотра
-    Minimap.lua                   -- Кнопка на миникарте
-    Libs/                         -- LibStub, CallbackHandler, LibDataBroker, LibDBIcon
+    CreatureCodex.lua                     -- Ядро (захват + БД)
+    Export.lua                            -- 4-вкладочный экспорт
+    UI.lua                                -- Панель просмотра
+    Minimap.lua                           -- Кнопка на миникарте
+    Libs/                                 -- LibStub, CallbackHandler, LibDataBroker, LibDBIcon
   server/
-    Custom/
-      creature_codex_sniffer.cpp  -- C++ хуки UnitScript
-      cs_creature_codex.cpp       -- GM-команда .codex
+    creature_codex_sniffer.cpp            -- C++ хуки UnitScript (слой трансляции)
+    cs_creature_codex.cpp                 -- GM-команда .codex
+    install_hooks.py                      -- Авто-патчер хуков TC
+    HOOKS.md                              -- Справочник ручного патчинга
     lua_scripts/
-      creature_codex_server.lua   -- Обработчики Eluna
-  sql/
-    auth_rbac_creature_codex.sql  -- RBAC разрешение для .codex
-    codex_aggregated.sql          -- Таблица многопользовательской агрегации
+      creature_codex_server.lua           -- Обработчики Eluna
   tools/
-    wpp_import.py                 -- WowPacketParser → SQL / инструмент импорта в аддон
-  screenshots/                    -- Скриншоты README
-  README.md                       -- Английская версия
-  README_RU.md                    -- Этот файл
-  README_DE.md                    -- Немецкая версия
+    wpp_import.py                         -- WPP → SQL / инструмент импорта в аддон
+    wpp_watcher.py                        -- Фоновый компаньон для авто-импорта
+    _README.txt                           -- Описание папки tools
+    parsed/
+      _What_To_Do_With_These_Files.txt    -- Руководство по распознанным файлам
+  _GUIDE/
+    01_Quick_Start.md                     -- Быстрый старт
+    02_Server_Setup.md                    -- Серверные хуки + настройка C++
+    03_Retail_Sniffing.md                 -- Пайплайн Ymir + WPP
+    04_Understanding_Exports.md           -- Форматы экспорта
+  session.py                              -- Менеджер сессий (Ymir + резервное копирование SV)
+  update_tools.py                         -- Загрузчик инструментов (требуется gh CLI)
+  Start Ymir.bat                          -- Запуск Ymir + менеджер сессий (Windows)
+  Update Tools.bat                        -- Загрузка/обновление WPP и Ymir (Windows)
+  Parse Captures.bat                      -- Запуск WPP на имеющихся .pkt файлах (Windows)
+  start_ymir.sh                           -- Запуск Ymir + менеджер сессий (Linux/macOS)
+  update_tools.sh                         -- Загрузка/обновление WPP и Ymir (Linux/macOS)
+  parse_captures.sh                       -- Запуск WPP на имеющихся .pkt файлах (Linux/macOS)
+  README.md                               -- Английская версия
+  README_RU.md                            -- Этот файл
+  README_DE.md                            -- Немецкая версия
+  LICENSE                                 -- MIT
 ```
 
 ## Лицензия

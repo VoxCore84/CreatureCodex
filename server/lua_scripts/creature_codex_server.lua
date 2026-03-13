@@ -4,21 +4,14 @@
     Handles addon message requests from the CreatureCodex client addon:
     - "SL|entry" => Sends back the creature's full spell list from creature_template_spell
     - "CI|entry" => Sends back creature info (faction, level, classification)
+    - "ZC|mapId" => Sends back all creatures in a zone with spell counts
+    - "AG|entry|spellData" => Stores aggregated spell discoveries server-side
 
     Works alongside the C++ UnitScript hooks that broadcast real-time spell casts.
 ]]
 
 local PREFIX = "CCDX"
 local WHISPER = 7  -- ChatMsg::CHAT_MSG_WHISPER
-
--- ============================================================
--- CONFIGURATION: Change this to match your database setup
--- ============================================================
--- The aggregation table must exist in this database.
--- Default is "characters" (works with CharDBExecute).
--- If you use a separate custom database, change this and
--- apply codex_aggregated.sql to that database instead.
-local AGGREGATION_DB = "characters"
 
 -- Cache creature spell lists to avoid repeated DB queries (cleared on reload)
 local spellListCache = {}
@@ -184,13 +177,13 @@ local function HandleAggregateSubmit(player, payload)
         spellId = tonumber(spellId)
         count = tonumber(count)
         if spellId and count and count > 0 then
-            -- Insert or update in codex_aggregated (database set by AGGREGATION_DB)
+            -- Insert or update in codex_aggregated (must exist in the characters DB)
             CharDBExecute(string.format(
-                "INSERT INTO %s.codex_aggregated (creature_entry, spell_id, cast_count, last_reporter, last_seen) " ..
+                "INSERT INTO codex_aggregated (creature_entry, spell_id, cast_count, last_reporter, last_seen) " ..
                 "VALUES (%d, %d, %d, '%s', %d) " ..
                 "ON DUPLICATE KEY UPDATE cast_count = GREATEST(cast_count, VALUES(cast_count)), " ..
                 "last_reporter = VALUES(last_reporter), last_seen = VALUES(last_seen)",
-                AGGREGATION_DB, entry, spellId, count, playerName:gsub("\\", ""):gsub("'", ""), now))
+                entry, spellId, count, playerName:gsub("\\", ""):gsub("'", ""), now))
         end
     end
 
