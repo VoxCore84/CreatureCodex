@@ -208,10 +208,12 @@ Bei Verwendung von Eluna kopieren Sie `server/lua_scripts/creature_codex_server.
 - **Zonen-Vollständigkeit**: Alle Kreaturen einer Karte mit bekannten Zauberzahlen abfragen
 - **Mehrspieler-Aggregation**: Spieler können Entdeckungen an eine gemeinsame Server-Tabelle senden
 
-Für die Aggregation SQL anwenden:
+Für die Aggregation SQL auf die gewünschte Datenbank anwenden (Standard: `characters`):
 ```
-mysql -u root -p roleplay < sql/roleplay_codex_aggregated.sql
+mysql -u root -p characters < sql/codex_aggregated.sql
 ```
+
+Bei Verwendung einer anderen Datenbank auch `AGGREGATION_DB` am Anfang von `creature_codex_server.lua` anpassen.
 
 ### Schritt 7: Client-Addon installieren
 
@@ -225,10 +227,11 @@ Kopieren Sie den `client/`-Inhalt nach `Interface\AddOns\CreatureCodex\` und kom
 |--------|-------------|
 | `/cc` oder `/codex` | Browser-Panel ein-/ausblenden |
 | `/cc export` | Export-Panel öffnen |
-| `/cc wipe` | Alle gespeicherten Daten löschen |
-| `/cc search <Name>` | Kreaturen nach Namen suchen |
-| `/cc zone` | Nur Kreaturen der aktuellen Zone anzeigen |
+| `/cc debug` | Debug-Ausgabe im Chat ein-/ausschalten |
 | `/cc stats` | Erfassungsstatistiken ausgeben |
+| `/cc zone` | Zonen-Kreaturdaten vom Server abfragen (erfordert Eluna) |
+| `/cc submit` | Aggregierte Daten an Server senden (erfordert Eluna) |
+| `/cc reset` | Alle gespeicherten Daten löschen (mit Bestätigung) |
 
 ### GM-Befehle (erfordert RBAC 3012)
 
@@ -287,7 +290,7 @@ CreatureCodex/
       creature_codex_server.lua   -- Eluna-Handler
   sql/
     auth_rbac_creature_codex.sql  -- RBAC-Berechtigung für .codex
-    roleplay_codex_aggregated.sql -- Mehrspieler-Aggregationstabelle
+    codex_aggregated.sql -- Mehrspieler-Aggregationstabelle
   README.md                       -- Englische Version
   README_RU.md                    -- Russische Version
   README_DE.md                    -- Diese Datei

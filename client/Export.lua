@@ -15,7 +15,7 @@ end
 -- ============================================================
 
 local function GenerateRawExport()
-    local lines = {"BFEXPORT:v3"}
+    local lines = {"CCEXPORT:v3"}
     local creatureCount = 0
 
     local entries = {}

@@ -7,9 +7,9 @@ Your NPCs don't fight. They stand there and auto-attack because `creature_templa
 
 **Repository:** [github.com/VoxCore84/CreatureCodex](https://github.com/VoxCore84/CreatureCodex)
 
-![Browser — creature list, spell details, tooltip with cooldown/HP/status](screenshots/browser.jpg)
+![Browser — creature list, spell details, tooltip with spell ID/status/zones](screenshots/browser.jpg)
 
-![Debug mode — live server sniffer output with spell entries, schools, HP%, cooldowns](screenshots/debug.jpg)
+![Debug mode — live visual scraper output with creature entries, spell names, schools](screenshots/debug.jpg)
 
 ## What It Does
 
@@ -212,12 +212,12 @@ If you use Eluna, copy `server/lua_scripts/creature_codex_server.lua` to your El
 - **Zone completeness**: Query all creatures in a map with their known spell counts
 - **Multi-player aggregation**: Players can submit discoveries to a shared server-side table
 
-For aggregation, apply the SQL:
+For aggregation, apply the SQL to whichever database you want the shared table in (default: `characters`):
 ```
-mysql -u root -p roleplay < sql/roleplay_codex_aggregated.sql
+mysql -u root -p characters < sql/codex_aggregated.sql
 ```
 
-(Or whichever database you use for custom tables.)
+If you use a different database, also update `AGGREGATION_DB` at the top of `creature_codex_server.lua` to match.
 
 ### Step 7: Install the Client Addon
 
@@ -231,10 +231,11 @@ Copy `client/` contents to `Interface\AddOns\CreatureCodex\` and rebuild your se
 |---------|-------------|
 | `/cc` or `/codex` | Toggle the browser panel |
 | `/cc export` | Open the export panel |
-| `/cc wipe` | Clear all stored data |
-| `/cc search <name>` | Search creatures by name |
-| `/cc zone` | Show only creatures from your current zone |
+| `/cc debug` | Toggle debug output in chat |
 | `/cc stats` | Print capture statistics |
+| `/cc zone` | Request zone creature data from server (requires Eluna) |
+| `/cc submit` | Submit aggregated data to server (requires Eluna) |
+| `/cc reset` | Clear all stored data (with confirmation) |
 
 ### GM Commands (requires RBAC 3012)
 
@@ -293,7 +294,7 @@ CreatureCodex/
       creature_codex_server.lua    -- Eluna handlers (spell lists, aggregation)
   sql/
     auth_rbac_creature_codex.sql   -- RBAC permission for .codex command
-    roleplay_codex_aggregated.sql  -- Multi-player aggregation table
+    codex_aggregated.sql  -- Multi-player aggregation table
   README.md                  -- This file
   README_RU.md               -- Russian translation
   README_DE.md               -- German translation

@@ -1,4 +1,6 @@
 -- CreatureCodex: Multi-player aggregation table
+-- Apply this to whichever database you configure in creature_codex_server.lua (AGGREGATION_DB).
+-- Default: characters database.  Example: mysql -u root -p characters < codex_aggregated.sql
 CREATE TABLE IF NOT EXISTS `codex_aggregated` (
     `creature_entry` INT UNSIGNED NOT NULL,
     `spell_id` INT UNSIGNED NOT NULL,
