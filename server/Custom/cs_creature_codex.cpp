@@ -10,6 +10,8 @@
 #include "World.h"
 #include "WorldSession.h"
 
+#include <unordered_set>
+
 using namespace Trinity::ChatCommands;
 
 // Forward declarations from creature_codex_sniffer.cpp

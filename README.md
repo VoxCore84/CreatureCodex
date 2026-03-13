@@ -83,13 +83,15 @@ When multiple sources run together, the addon deduplicates automatically — you
 
 If you just want the visual scraper without modifying your server:
 
-1. Copy the `client/` folder contents into:
+1. Copy the `client/` folder contents into your WoW installation's addon folder:
    ```
-   Interface\AddOns\CreatureCodex\
+   <WoW Install>/Interface/AddOns/CreatureCodex/
    ```
+   For example: `C:\WoW\_retail_\Interface\AddOns\CreatureCodex\`. Create the `AddOns` folder if it doesn't exist.
 2. The folder should contain: `CreatureCodex.toc`, `CreatureCodex.lua`, `Export.lua`, `UI.lua`, `Minimap.lua`, and the `Libs/` folder.
-3. Log in. The addon registers automatically via Addon Compartment and minimap button.
+3. Log in. The addon registers automatically via the minimap button (gold book icon).
 4. Walk near creatures and observe them fighting — spells are captured in real time.
+5. Type `/cc` in chat to open the browser panel and confirm the addon is working.
 
 **What you get**: Visible casts and channels (anything the WoW API can detect).
 **What you miss**: Instant casts, hidden spells, and auras applied without visible cast bars.
@@ -141,7 +143,7 @@ void ScriptMgr::OnAuraApply(Unit* target, AuraApplication* aurApp)
 }
 ```
 
-Also add the declarations to the `ScriptMgr` class in the header:
+**`src/server/game/Scripting/ScriptMgr.h`** — Also add these declarations to `class ScriptMgr` (a different class in the same file — search for `class TC_GAME_API ScriptMgr`):
 ```cpp
 void OnCreatureSpellCast(Creature* creature, SpellInfo const* spell);
 void OnCreatureSpellStart(Creature* creature, SpellInfo const* spell);
@@ -151,34 +153,36 @@ void OnAuraApply(Unit* target, AuraApplication* aurApp);
 
 ### Step 2: Wire the Hooks into Spell.cpp and Unit.cpp
 
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendSpellGo()` (after the packet is sent):
+Add these one-liner hooks at four locations. Search for the function name to find each spot.
+
+**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendSpellGo()`, add at the end of the function (just before the closing `}`):
 ```cpp
 if (Creature* creature = m_caster->ToCreature())
     sScriptMgr->OnCreatureSpellCast(creature, m_spellInfo);
 ```
 
-**`src/server/game/Spells/Spell.cpp`** — At the start of `Spell::cast()` (after the initial checks):
+**`src/server/game/Spells/Spell.cpp`** — In `Spell::cast()`, add near the top after the null-checks on `m_spellInfo`:
 ```cpp
 if (Creature* creature = m_caster->ToCreature())
     sScriptMgr->OnCreatureSpellStart(creature, m_spellInfo);
 ```
 
-**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendChannelUpdate()` when `time == 0`:
+**`src/server/game/Spells/Spell.cpp`** — In `Spell::SendChannelUpdate()`, find `if (time == 0)` and add inside that block:
 ```cpp
 if (Creature* creature = m_caster->ToCreature())
     sScriptMgr->OnCreatureChannelFinished(creature, m_spellInfo);
 ```
 
-**`src/server/game/Entities/Unit/Unit.cpp`** — In `Unit::_ApplyAura()` (after the aura application succeeds):
+**`src/server/game/Entities/Unit/Unit.cpp`** — In `Unit::_ApplyAura()`, add at the end of the function (just before the closing `}`):
 ```cpp
 sScriptMgr->OnAuraApply(this, aurApp);
 ```
 
 ### Step 3: Add IsAddonRegistered Helper
 
-The sniffer checks if a player has the `CCDX` addon prefix registered before sending them data. Add this to `WorldSession`:
+The sniffer checks if a player has the `CCDX` addon prefix registered before sending them data. Add this small helper to `WorldSession` (it reads the `_registeredAddonPrefixes` member that already exists in the class):
 
-**`src/server/game/Server/WorldSession.h`**:
+**`src/server/game/Server/WorldSession.h`** — Add to the `public:` section of `class WorldSession`:
 ```cpp
 bool IsAddonRegistered(std::string_view prefix) const;
 ```

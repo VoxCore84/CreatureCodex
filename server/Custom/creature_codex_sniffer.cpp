@@ -117,7 +117,7 @@ static void BroadcastToNearbyPlayers(Creature* creature, SpellInfo const* spell,
         return;
 
     // Build message: TYPE|entry|spellID|schoolMask|creatureName|hp%
-    uint32 hpPct = creature->GetHealthPct();
+    uint32 hpPct = static_cast<uint32>(creature->GetHealthPct());
     std::string msg = std::string(msgType) + "|"
         + std::to_string(entry) + "|"
         + std::to_string(spellId) + "|"
