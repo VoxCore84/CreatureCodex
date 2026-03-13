@@ -23,10 +23,15 @@ CreatureCodex turns observation into working SmartAI. You watch mobs fight, it w
 ### The Full Pipeline
 
 ```
-Walk near mobs → Addon captures spells → Browse in-game → Export as SQL
-                                                            ├── creature_template_spell (spell lists)
-                                                            ├── smart_scripts (AI with cooldowns)
-                                                            └── new-only (just the gaps)
+                            ┌─ Visual Scraper (client addon, works everywhere)
+Walk near mobs / sniff ─────┼─ Server Hooks (C++ UnitScript, 100% coverage)
+                            └─ WPP Import (offline, from Ymir packet captures)
+                                          │
+                                          ▼
+                              Browse in-game → Export as SQL
+                                                ├── creature_template_spell (spell lists)
+                                                ├── smart_scripts (AI with cooldowns)
+                                                └── new-only (just the gaps)
 ```
 
 The SmartAI export isn't just a list of spell IDs — it uses the addon's timing intelligence to estimate cooldowns from observed cast intervals, detects HP-phase abilities (spells only seen below 40% HP get `event_type=2` health triggers instead of timed repeats), and infers target types from cast-vs-aura ratios. It's a first draft you can tune, not a blank slate you have to build from scratch.
@@ -47,9 +52,11 @@ This data doesn't ship in DB2 files. It has to be observed from a live server. I
 
 For servers that can add C++ hooks, four `UnitScript` callbacks catch 100% of casts including instant and hidden ones, broadcast as lightweight addon messages. Both layers deduplicate automatically — zero gaps, zero noise.
 
+And if you already have Ymir packet captures, the included Python tool can import WPP output directly — no live server session needed.
+
 ## How It Works
 
-CreatureCodex has two layers:
+CreatureCodex has three data sources:
 
 1. **Client-side visual scraper** (works everywhere, no server patches needed)
    - Polls `UnitCastingInfo`/`UnitChannelInfo` at 10 Hz for spell casts
@@ -61,9 +68,18 @@ CreatureCodex has two layers:
    - Catches 100% of casts including instant/hidden ones the client never sees
    - Broadcasts only to nearby players (100 yd) who have CreatureCodex installed
 
-When both layers run together, the addon deduplicates automatically — you get complete coverage with zero gaps.
+3. **WPP import** (offline, from Ymir packet captures)
+   - Python script parses WowPacketParser `.txt` output
+   - Extracts creature entries, spell IDs, schools, and timestamps from SMSG_SPELL_GO / SMSG_SPELL_START / SMSG_AURA_UPDATE
+   - Generates `CreatureCodexDB.lua` SavedVariables that the addon loads directly
+   - Estimates cooldowns from observed cast intervals
 
-## Client-Only Install (No Server Patches)
+When multiple sources run together, the addon deduplicates automatically — you get complete coverage with zero gaps.
+
+## Installation
+
+<details>
+<summary><strong>Client-Only Install (No Server Patches)</strong> — click to expand</summary>
 
 If you just want the visual scraper without modifying your server:
 
@@ -78,7 +94,10 @@ If you just want the visual scraper without modifying your server:
 **What you get**: Visible casts and channels (anything the WoW API can detect).
 **What you miss**: Instant casts, hidden spells, and auras applied without visible cast bars.
 
-## Full Install (Server + Client)
+</details>
+
+<details>
+<summary><strong>Full Install (Server + Client)</strong> — click to expand</summary>
 
 ### Prerequisites
 
@@ -223,6 +242,62 @@ If you use a different database, also update `AGGREGATION_DB` at the top of `cre
 
 Copy `client/` contents to `Interface\AddOns\CreatureCodex\` and rebuild your server.
 
+</details>
+
+<details>
+<summary><strong>WPP Import (Ymir / Sniff Users)</strong> — click to expand</summary>
+
+If you use Ymir to capture packets and WowPacketParser to parse them, you can import creature spell data from `.txt` output files without any live server session.
+
+### Requirements
+
+- Python 3.10+
+- WowPacketParser `.txt` output files (parsed from `.pkt` captures)
+
+### Quick Start
+
+```bash
+# Import from one or more WPP text files
+python tools/wpp_import.py sniff1.txt sniff2.txt
+
+# Merge into existing addon data (keeps your in-game discoveries)
+python tools/wpp_import.py --merge WTF/Account/YOUR_ACCOUNT/SavedVariables/CreatureCodexDB.lua sniff1.txt
+
+# Custom output path
+python tools/wpp_import.py --output /path/to/CreatureCodexDB.lua sniff1.txt
+```
+
+### What It Parses
+
+The script extracts creature spell data from three WPP opcodes:
+
+| Opcode | What It Captures |
+|--------|-----------------|
+| `SMSG_SPELL_GO` | Completed spell casts (creature entry, spell ID, school) |
+| `SMSG_SPELL_START` | Spell cast starts (same fields) |
+| `SMSG_AURA_UPDATE` | Aura applications on creatures |
+
+It also estimates cooldowns from observed cast timestamps — the same data the addon uses for SmartAI export.
+
+### Output
+
+The script generates a `CreatureCodexDB.lua` file in the same format the addon uses for SavedVariables. To load it:
+
+1. Copy the output file to:
+   ```
+   WTF/Account/<YOUR_ACCOUNT>/SavedVariables/CreatureCodexDB.lua
+   ```
+2. Log in and `/reload` — the addon picks up the imported data immediately.
+3. Browse and export as usual with `/cc` and `/cc export`.
+
+### Tips
+
+- **Walking produces denser data than flying.** When sniffing, walk through areas on foot for better creature spell coverage.
+- **Multiple sniffs merge cleanly.** Run the importer with multiple `.txt` files to combine data from different sessions.
+- **Merge preserves your work.** Use `--merge` to combine WPP imports with data you've already captured in-game. Cast counts and cooldown estimates are kept from whichever source has more observations.
+
+</details>
+
 ## Usage
 
 ### Slash Commands
@@ -294,10 +369,13 @@ CreatureCodex/
       creature_codex_server.lua    -- Eluna handlers (spell lists, aggregation)
   sql/
     auth_rbac_creature_codex.sql   -- RBAC permission for .codex command
-    codex_aggregated.sql  -- Multi-player aggregation table
-  README.md                  -- This file
-  README_RU.md               -- Russian translation
-  README_DE.md               -- German translation
+    codex_aggregated.sql           -- Multi-player aggregation table
+  tools/
+    wpp_import.py                  -- WowPacketParser → SavedVariables importer
+  screenshots/                     -- README screenshots
+  README.md                        -- This file
+  README_RU.md                     -- Russian translation
+  README_DE.md                     -- German translation
 ```
 
 ## License
