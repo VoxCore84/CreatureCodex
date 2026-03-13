@@ -15,6 +15,16 @@
    - A gold book icon appears on your minimap — that's CreatureCodex
    - If you don't see it: Game Menu → AddOns → enable "Load out of date AddOns"
 
+## How This Helps Your Server
+
+Most repacks and fresh TrinityCore builds have empty `creature_template_spell` and `smart_scripts` tables. Your mobs auto-attack and do nothing else. But many of those creatures still have cast-bar abilities baked into their client-side data — they just aren't wired up in the database.
+
+CreatureCodex watches what creatures visually do in-game and turns that into working SQL. Walk near mobs, let them fight, export the SmartAI tab, apply the SQL, and those mobs now cast their spells with estimated cooldowns and target logic. No manual data entry, no guessing spell IDs.
+
+**What it catches without server patches:** Any spell that produces a visible cast bar or nameplate aura — typically 60-80% of a creature's abilities.
+
+**What it misses:** Instant casts, hidden triggers, and server-side-only spells with no visual component. Adding the C++ server hooks (see `02_Server_Setup.md`) catches 100%.
+
 ## Use It
 
 - **Click the minimap icon** to open the browser (or type `/cc`)
