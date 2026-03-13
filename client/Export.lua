@@ -320,12 +320,21 @@ local function ShowExportWindow(text, summary)
         end
     end
 
+    -- Show stale indicator if a previously saved export exists and data changed since
+    local staleNote = ""
+    if CreatureCodex_GetSavedExport and CreatureCodex_GetDataRevision then
+        local saved = CreatureCodex_GetSavedExport(currentExportMode)
+        if saved and saved.sourceRevision and saved.sourceRevision < CreatureCodex_GetDataRevision() then
+            staleNote = " |cffffff00(data changed since last export — regenerated)|r"
+        end
+    end
+
     CreatureCodexExportFrame.editBox:SetText(text)
     CreatureCodexExportFrame:Show()
     CreatureCodexExportFrame.editBox:HighlightText()
     CreatureCodexExportFrame.editBox:SetFocus()
 
-    print("|cff00ccff[CreatureCodex]|r " .. summary)
+    print("|cff00ccff[CreatureCodex]|r " .. summary .. staleNote)
 end
 
 function CreatureCodex_Export()
@@ -334,20 +343,29 @@ function CreatureCodex_Export()
         return
     end
 
+    local text, summary
     if currentExportMode == "sql" then
-        local text, creatures, spells = GenerateSQL()
-        ShowExportWindow(text, "SQL export: " .. creatures .. " creatures, " .. spells .. " spells.")
-
+        local t, creatures, spells = GenerateSQL()
+        text = t
+        summary = "SQL export: " .. creatures .. " creatures, " .. spells .. " spells."
     elseif currentExportMode == "smartai" then
-        local text, creatures = GenerateSmartAI()
-        ShowExportWindow(text, "SmartAI stubs: " .. creatures .. " creatures with 2+ casts.")
-
+        local t, creatures = GenerateSmartAI()
+        text = t
+        summary = "SmartAI stubs: " .. creatures .. " creatures with 2+ casts."
     elseif currentExportMode == "new" then
-        local text, count = GenerateNewDiscoveriesSQL()
-        ShowExportWindow(text, "New discoveries: " .. count .. " spells not yet in DB.")
-
+        local t, count = GenerateNewDiscoveriesSQL()
+        text = t
+        summary = "New discoveries: " .. count .. " spells not yet in DB."
     else
-        local text, creatures = GenerateRawExport()
-        ShowExportWindow(text, "Raw export: " .. creatures .. " creatures. Ctrl+A, Ctrl+C to copy.")
+        local t, creatures = GenerateRawExport()
+        text = t
+        summary = "Raw export: " .. creatures .. " creatures. Ctrl+A, Ctrl+C to copy."
+    end
+
+    ShowExportWindow(text, summary)
+
+    -- Persist export to SavedVariables
+    if CreatureCodex_SaveExport then
+        CreatureCodex_SaveExport(currentExportMode, text)
     end
 end

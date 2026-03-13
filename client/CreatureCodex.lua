@@ -1,4 +1,4 @@
-local VERSION = 3
+local VERSION = 4
 
 local CCDX_PREFIX = "CCDX"
 
@@ -74,24 +74,64 @@ local EVICT_AGE        = 15    -- Entries older than 15s are stale
 -- DB Initialization
 -- ============================================================
 
+local dataRevision = 0  -- monotonic counter for stale export detection
+
 local function InitDB()
-    if not CreatureCodexDB or CreatureCodexDB.version ~= VERSION then
-        local old = CreatureCodexDB
+    if not CreatureCodexDB then
         CreatureCodexDB = {
             version = VERSION,
             collector = UnitName("player") .. "-" .. GetRealmName(),
             lastExport = 0,
-            creatures = old and old.creatures or {},
-            spellBlacklist = old and old.spellBlacklist or {},
-            creatureBlacklist = old and old.creatureBlacklist or {},
+            creatures = {},
+            spellBlacklist = {},
+            creatureBlacklist = {},
+            ignored = {},
+            players = {},
+            exports = {},
+            spellMetadata = {},
+            settings = { trackPlayers = false },
+            dataRevision = 0,
         }
     end
+
+    -- Additive migration: v3 → v4
+    if (CreatureCodexDB.version or 0) < VERSION then
+        CreatureCodexDB.version = VERSION
+        -- Migrate creatureBlacklist: true → {name, ignoredAt}
+        if not CreatureCodexDB.ignored then
+            CreatureCodexDB.ignored = {}
+        end
+        for entry, val in pairs(CreatureCodexDB.creatureBlacklist or {}) do
+            if val == true then
+                local name = "Creature " .. entry
+                CreatureCodexDB.ignored[entry] = { name = name, ignoredAt = time() }
+            end
+        end
+        -- Ensure new tables exist
+        if not CreatureCodexDB.players then CreatureCodexDB.players = {} end
+        if not CreatureCodexDB.exports then CreatureCodexDB.exports = {} end
+        if not CreatureCodexDB.spellMetadata then CreatureCodexDB.spellMetadata = {} end
+        if not CreatureCodexDB.settings then CreatureCodexDB.settings = { trackPlayers = false } end
+        if not CreatureCodexDB.dataRevision then CreatureCodexDB.dataRevision = 0 end
+    end
+
+    dataRevision = CreatureCodexDB.dataRevision or 0
+
     for id in pairs(CreatureCodexDB.spellBlacklist or {}) do
         SPELL_BLACKLIST[id] = true
     end
     for id in pairs(CreatureCodexDB.creatureBlacklist or {}) do
         CREATURE_BLACKLIST[id] = true
     end
+end
+
+local function BumpRevision()
+    dataRevision = dataRevision + 1
+    CreatureCodexDB.dataRevision = dataRevision
+end
+
+function CreatureCodex_GetDataRevision()
+    return dataRevision
 end
 
 -- ============================================================
@@ -339,6 +379,8 @@ local function RecordSpell(creatureEntry, spellID, spellSchool, creatureName, re
         print(format("|cff00ccff[CC %s]|r %s entry=%d spell=%s[%d] school=%d%s%s",
             src, label, creatureEntry, tostring(spell.name), spellID, spell.school, hpStr, cdStr))
     end
+
+    BumpRevision()
 end
 
 -- ============================================================
@@ -443,6 +485,27 @@ local function HandleZoneCreaturesMessage(mapId, totalCount, creatureCSV)
                 dbSpellCount = tonumber(spellCount) or 0,
             }
         end
+    end
+
+    -- Print zone scan results to chat
+    local db = CreatureCodexDB and CreatureCodexDB.creatures or {}
+    local observed, withSpells, total = 0, 0, #zoneCreatureData[mapId]
+    for _, creature in ipairs(zoneCreatureData[mapId]) do
+        if db[creature.entry] then
+            observed = observed + 1
+            local spellCount = 0
+            for _ in pairs(db[creature.entry].spells or {}) do spellCount = spellCount + 1 end
+            if spellCount > 0 then withSpells = withSpells + 1 end
+        end
+    end
+    local pct = total > 0 and (withSpells / total * 100) or 0
+    print(format("|cff00ccff[CreatureCodex]|r |cff00ff00Zone scan complete:|r %d creatures in zone.", total))
+    print(format("|cff00ccff[CreatureCodex]|r  |cff00ff00With spells:|r %d/%d (%.0f%%)  |  |cffffff00Seen:|r %d  |  |cffff4444Missing:|r %d",
+        withSpells, total, pct, observed, total - observed))
+
+    -- Notify UI to refresh if open
+    if CreatureCodex_OnZoneScanComplete then
+        CreatureCodex_OnZoneScanComplete(mapId)
     end
 
     if debugMode then
@@ -766,6 +829,34 @@ function CreatureCodex_IgnoreSpell(spellId)
     if CreatureCodexDB then
         CreatureCodexDB.spellBlacklist[spellId] = true
     end
+end
+
+function CreatureCodex_GetIgnoredList()
+    return CreatureCodexDB and CreatureCodexDB.ignored or {}
+end
+
+function CreatureCodex_UnignoreCreature(entry)
+    if not CreatureCodexDB then return end
+    CreatureCodexDB.creatureBlacklist[entry] = nil
+    CREATURE_BLACKLIST[entry] = nil
+    if CreatureCodexDB.ignored then
+        CreatureCodexDB.ignored[entry] = nil
+    end
+end
+
+function CreatureCodex_SaveExport(exportType, text)
+    if not CreatureCodexDB then return end
+    if not CreatureCodexDB.exports then CreatureCodexDB.exports = {} end
+    CreatureCodexDB.exports[exportType] = {
+        text = text,
+        generatedAt = time(),
+        sourceRevision = dataRevision,
+    }
+end
+
+function CreatureCodex_GetSavedExport(exportType)
+    if not CreatureCodexDB or not CreatureCodexDB.exports then return nil end
+    return CreatureCodexDB.exports[exportType]
 end
 
 -- Addon Compartment

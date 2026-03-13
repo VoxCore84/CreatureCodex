@@ -191,16 +191,37 @@ local sessionText = statsBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSma
 sessionText:SetPoint("RIGHT", -8, 0)
 sessionText:SetTextColor(0.4, 1, 0.4)
 
+local snifferText = statsBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+snifferText:SetPoint("CENTER", 0, 0)
+
+local statsUpdateTimer = 0
 local function UpdateStats()
     local totalC, totalS = CreatureCodex_CountDB()
     statsText:SetText(totalC .. " creatures  |  " .. totalS .. " spells tracked")
     local sc, ss, sa = CreatureCodex_GetSessionStats()
     if sc > 0 or ss > 0 or (sa and sa > 0) then
-        sessionText:SetText("Session: +" .. sc .. " creatures, +" .. ss .. " spells, +" .. (sa or 0) .. " auras")
+        sessionText:SetText("+" .. sc .. "C +" .. ss .. "S +" .. (sa or 0) .. "A")
     else
         sessionText:SetText("")
     end
+    local srvCasts, srvActive = CreatureCodex_GetServerStats()
+    if srvActive then
+        snifferText:SetText("|cff00ff00Server: ON|r (" .. srvCasts .. " casts)")
+        snifferText:SetTextColor(0.3, 1, 0.3)
+    else
+        snifferText:SetText("|cff888888Server: --")
+        snifferText:SetTextColor(0.5, 0.5, 0.5)
+    end
 end
+
+-- Auto-update stats bar every 0.5s when visible
+f:HookScript("OnUpdate", function(_, elapsed)
+    statsUpdateTimer = statsUpdateTimer + elapsed
+    if statsUpdateTimer >= 0.5 then
+        statsUpdateTimer = 0
+        if f:IsShown() then UpdateStats() end
+    end
+end)
 
 -- ============================================================
 -- Search box
@@ -299,13 +320,22 @@ for i = 1, VISIBLE_ROWS do
     row.countText = countText
 
     row:SetScript("OnClick", function(self)
-        if self.entry then
-            selectedEntry = self.entry
-            RebuildSpellList()
-            spellScrollOffset = 0
-            CreatureCodex_RefreshCreatureList()
-            CreatureCodex_RefreshSpellList()
+        if not self.entry then return end
+        if IsControlKeyDown() then
+            local name = CreatureCodexDB.creatures[self.entry] and CreatureCodexDB.creatures[self.entry].name or "Unknown"
+            CreatureCodex_ShowURL("npc", self.entry, name)
+            return
         end
+        if IsShiftKeyDown() and ChatEdit_GetActiveWindow() then
+            local name = CreatureCodexDB.creatures[self.entry] and CreatureCodexDB.creatures[self.entry].name or "Unknown"
+            ChatEdit_InsertLink(format("[CreatureCodex: %s (%d)]", name, self.entry))
+            return
+        end
+        selectedEntry = self.entry
+        RebuildSpellList()
+        spellScrollOffset = 0
+        CreatureCodex_RefreshCreatureList()
+        CreatureCodex_RefreshSpellList()
     end)
 
     row:SetScript("OnEnter", function(self)
@@ -497,6 +527,12 @@ for i = 1, SPELL_VISIBLE do
     row:SetScript("OnClick", function(self, btn)
         if not self.spellData then return end
         local sid = self.spellData.id
+
+        -- Ctrl-click: open Wowhead URL popup
+        if IsControlKeyDown() then
+            CreatureCodex_ShowURL("spell", sid, self.spellData.name)
+            return
+        end
 
         -- Shift-click: insert spell link into chat
         if IsShiftKeyDown() and ChatEdit_GetActiveWindow() then
@@ -748,6 +784,8 @@ blacklistBtn:SetScript("OnClick", function()
     if selectedEntry then
         local name = CreatureCodexDB.creatures[selectedEntry] and CreatureCodexDB.creatures[selectedEntry].name or "Unknown"
         CreatureCodexDB.creatureBlacklist[selectedEntry] = true
+        if not CreatureCodexDB.ignored then CreatureCodexDB.ignored = {} end
+        CreatureCodexDB.ignored[selectedEntry] = { name = name, ignoredAt = time() }
         CreatureCodexDB.creatures[selectedEntry] = nil
         selectedEntry = nil
         RebuildCreatureList()
@@ -880,6 +918,173 @@ submitBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 resultCount = actionBar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
 resultCount:SetPoint("LEFT", syncBtn, "RIGHT", 12, 0)
 resultCount:SetTextColor(0.5, 0.5, 0.5)
+
+-- ============================================================
+-- Wowhead URL popup (Ctrl-click on creatures/spells)
+-- ============================================================
+
+local urlPopup = CreateFrame("Frame", "CreatureCodexURLPopup", UIParent, "BackdropTemplate")
+urlPopup:SetSize(420, 70)
+urlPopup:SetPoint("CENTER")
+urlPopup:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 2,
+})
+urlPopup:SetBackdropColor(0.05, 0.05, 0.1, 0.95)
+urlPopup:SetBackdropBorderColor(0, 0.5, 0.8, 0.9)
+urlPopup:SetFrameStrata("DIALOG")
+urlPopup:SetMovable(true)
+urlPopup:EnableMouse(true)
+urlPopup:RegisterForDrag("LeftButton")
+urlPopup:SetScript("OnDragStart", urlPopup.StartMoving)
+urlPopup:SetScript("OnDragStop", urlPopup.StopMovingOrSizing)
+urlPopup:Hide()
+
+local urlTitle = urlPopup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+urlTitle:SetPoint("TOP", 0, -8)
+urlTitle:SetTextColor(0, 0.8, 1)
+
+local urlBox = CreateFrame("EditBox", nil, urlPopup, "BackdropTemplate")
+urlBox:SetPoint("BOTTOMLEFT", 10, 10)
+urlBox:SetPoint("BOTTOMRIGHT", -10, 10)
+urlBox:SetHeight(22)
+urlBox:SetFontObject("GameFontHighlightSmall")
+urlBox:SetAutoFocus(false)
+urlBox:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 1,
+})
+urlBox:SetBackdropColor(0, 0, 0, 0.6)
+urlBox:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+urlBox:SetTextInsets(4, 4, 0, 0)
+urlBox:SetScript("OnEscapePressed", function() urlPopup:Hide() end)
+urlBox:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
+
+local urlClose = CreateFrame("Button", nil, urlPopup, "UIPanelCloseButton")
+urlClose:SetPoint("TOPRIGHT", 2, 2)
+urlClose:SetScript("OnClick", function() urlPopup:Hide() end)
+
+function CreatureCodex_ShowURL(urlType, id, name)
+    local url
+    if urlType == "npc" then
+        url = "https://www.wowhead.com/npc=" .. id
+    elseif urlType == "spell" then
+        url = "https://www.wowhead.com/spell=" .. id
+    else
+        return
+    end
+    urlTitle:SetText((name or "") .. " (" .. urlType .. " " .. id .. ")")
+    urlBox:SetText(url)
+    urlPopup:Show()
+    urlBox:SetFocus()
+    urlBox:HighlightText()
+end
+
+-- ============================================================
+-- Ignored creatures panel (toggled via button)
+-- ============================================================
+
+local ignoredPanel = CreateFrame("Frame", nil, f, "BackdropTemplate")
+ignoredPanel:SetSize(PANEL_WIDTH - 32, PANEL_HEIGHT - 166)
+ignoredPanel:SetPoint("TOPLEFT", 16, -90)
+ignoredPanel:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    edgeFile = "Interface\\Buttons\\WHITE8x8",
+    edgeSize = 1,
+})
+ignoredPanel:SetBackdropColor(0, 0, 0, 0.3)
+ignoredPanel:SetBackdropBorderColor(0.5, 0.3, 0.1, 0.6)
+ignoredPanel:Hide()
+
+local ignoredTitle = ignoredPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+ignoredTitle:SetPoint("TOP", 0, -8)
+ignoredTitle:SetText("Ignored Creatures")
+ignoredTitle:SetTextColor(0.8, 0.5, 0.2)
+
+local ignoredScroll = CreateFrame("ScrollFrame", nil, ignoredPanel, "UIPanelScrollFrameTemplate")
+ignoredScroll:SetPoint("TOPLEFT", 8, -28)
+ignoredScroll:SetPoint("BOTTOMRIGHT", -28, 8)
+local ignoredContent = CreateFrame("Frame", nil, ignoredScroll)
+ignoredContent:SetSize(PANEL_WIDTH - 80, 1)
+ignoredScroll:SetScrollChild(ignoredContent)
+
+local ignoredRows = {}
+local showingIgnored = false
+
+local function RefreshIgnoredPanel()
+    -- Clear old rows
+    for _, row in ipairs(ignoredRows) do row:Hide() end
+    wipe(ignoredRows)
+
+    local ignored = CreatureCodex_GetIgnoredList()
+    local y = 0
+    local count = 0
+    for entry, info in pairs(ignored) do
+        count = count + 1
+        local row = CreateFrame("Frame", nil, ignoredContent)
+        row:SetSize(PANEL_WIDTH - 80, 22)
+        row:SetPoint("TOPLEFT", 0, -y)
+
+        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        nameText:SetPoint("LEFT", 4, 0)
+        nameText:SetText(format("|cffffa040%s|r  (entry %d)", info.name or "Unknown", entry))
+
+        local unignoreBtn = CreateFrame("Button", nil, row, "BackdropTemplate")
+        unignoreBtn:SetSize(70, 18)
+        unignoreBtn:SetPoint("RIGHT", -4, 0)
+        unignoreBtn:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        unignoreBtn:SetBackdropColor(0.2, 0.5, 0.2, 0.6)
+        unignoreBtn:SetBackdropBorderColor(0.3, 0.6, 0.3, 0.9)
+        local btnLabel = unignoreBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        btnLabel:SetPoint("CENTER")
+        btnLabel:SetText("Unignore")
+        btnLabel:SetTextColor(1, 1, 1)
+        unignoreBtn:SetScript("OnClick", function()
+            CreatureCodex_UnignoreCreature(entry)
+            PlaySound(852)
+            print(format("|cff00ccff[CreatureCodex]|r Unignored %s (entry %d). Walk near it to recapture.", info.name or "Unknown", entry))
+            RefreshIgnoredPanel()
+        end)
+
+        ignoredRows[#ignoredRows + 1] = row
+        y = y + 24
+    end
+
+    ignoredContent:SetHeight(math.max(y, 1))
+    ignoredTitle:SetText(format("Ignored Creatures (%d)", count))
+end
+
+-- Ignored toggle button on utility bar
+local ignoredBtn = MakeButton(utilBar, "Ignored", 70, {0.6, 0.3, 0.1})
+ignoredBtn:SetPoint("LEFT", submitBtn, "RIGHT", 8, 0)
+ignoredBtn:SetScript("OnClick", function()
+    PlaySound(852)
+    showingIgnored = not showingIgnored
+    if showingIgnored then
+        RefreshIgnoredPanel()
+        ignoredPanel:Show()
+        listPanel:Hide()
+        spellPanel:Hide()
+    else
+        ignoredPanel:Hide()
+        listPanel:Show()
+        spellPanel:Show()
+    end
+end)
+ignoredBtn:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+    GameTooltip:SetText("Ignored Creatures", 0.8, 0.5, 0.2)
+    GameTooltip:AddLine("View and manage blacklisted creatures.", 0.8, 0.8, 0.8)
+    GameTooltip:AddLine("Unignore to allow recapture.", 0.6, 0.6, 0.6)
+    GameTooltip:Show()
+end)
+ignoredBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 -- ============================================================
 -- Resize grip (bottom-right corner, Simulationcraft pattern)
